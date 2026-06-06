@@ -209,6 +209,48 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .enso-icon { font-size: 24px; }
 .enso-text strong { color: var(--text); }
 
+/* ── How it works panel ── */
+.how-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden;
+}
+.how-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; background: none; border: none; cursor: pointer; color: var(--text);
+  font-size: 13px; font-weight: 700; text-align: left;
+}
+.how-toggle:hover { background: rgba(255,255,255,.02); }
+.how-arrow { font-size: 11px; color: var(--muted); transition: transform 0.2s; }
+.how-arrow.open { transform: rotate(180deg); }
+.how-body { display: none; padding: 0 18px 18px; }
+.how-body.open { display: block; }
+.how-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px; margin-top: 14px;
+}
+.how-step {
+  background: var(--surface2); border-radius: 8px; padding: 14px 16px;
+  border-top: 3px solid var(--border);
+}
+.how-step.s1 { border-top-color: var(--accent); }
+.how-step.s2 { border-top-color: var(--purple); }
+.how-step.s3 { border-top-color: var(--gold); }
+.how-step.s4 { border-top-color: var(--green); }
+.how-step-num  { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.how-step-title{ font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.how-step-body { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.how-legend {
+  margin-top: 16px; display: flex; flex-wrap: wrap; gap: 16px;
+  padding: 12px 14px; background: var(--surface2); border-radius: 8px;
+}
+.how-legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.how-swatch { width: 28px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.how-note {
+  margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.6;
+  padding: 10px 14px; background: rgba(245,158,11,.06); border-radius: 6px;
+  border-left: 3px solid var(--gold);
+}
+
 /* ── News strip ── */
 .news-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -368,6 +410,61 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
   <!-- Stats -->
   <div class="stats-row" id="statsRow" style="display:none;"></div>
+
+  <!-- How it works -->
+  <div class="how-card">
+    <button class="how-toggle" onclick="toggleHow(this)">
+      <span>🧠 How does Kronos predict this? <span style="color:var(--muted);font-weight:400;font-size:12px;margin-left:8px;">click to expand</span></span>
+      <span class="how-arrow" id="howArrow">▼</span>
+    </button>
+    <div class="how-body" id="howBody">
+      <div class="how-grid">
+        <div class="how-step s1">
+          <div class="how-step-num">Step 1 · Input</div>
+          <div class="how-step-title">It reads recent price history</div>
+          <div class="how-step-body">Kronos looks at the last 300 daily candles (Open, High, Low, Close, Volume) for your chosen instrument. That's about 14 months of trading data. It doesn't read news, earnings, or fundamentals — just raw price action.</div>
+        </div>
+        <div class="how-step s2">
+          <div class="how-step-num">Step 2 · Tokenise</div>
+          <div class="how-step-title">It converts prices into a language</div>
+          <div class="how-step-body">Just like ChatGPT breaks sentences into words, Kronos breaks price bars into "tokens" — small chunks that represent patterns like "three green candles followed by a doji." This lets it treat markets like a language it can read.</div>
+        </div>
+        <div class="how-step s3">
+          <div class="how-step-num">Step 3 · Predict</div>
+          <div class="how-step-title">It completes the pattern</div>
+          <div class="how-step-body">Like autocomplete on your phone, Kronos predicts what tokens (price bars) are most likely to come next — based on every pattern it learned from millions of historical candles across crypto, stocks, and commodities.</div>
+        </div>
+        <div class="how-step s4">
+          <div class="how-step-num">Step 4 · Output</div>
+          <div class="how-step-title">It shows a probability range</div>
+          <div class="how-step-body">The gold shaded zone is NOT one prediction — it's the range across multiple runs (samples). Wide band = the model is unsure. Narrow band = higher confidence. The center line is the average expected path.</div>
+        </div>
+      </div>
+
+      <div class="how-legend">
+        <div class="how-legend-item">
+          <div class="how-swatch" style="background:linear-gradient(90deg,rgba(34,197,94,0.6),rgba(239,68,68,0.6));"></div>
+          <span><strong style="color:var(--text)">Green/Red candles</strong> — actual historical price (what really happened)</span>
+        </div>
+        <div class="how-legend-item">
+          <div class="how-swatch" style="background:#f59e0b;height:3px;margin-top:3px;"></div>
+          <span><strong style="color:var(--text)">Gold line</strong> — Kronos predicted path (most likely outcome)</span>
+        </div>
+        <div class="how-legend-item">
+          <div class="how-swatch" style="background:rgba(245,158,11,0.15);border:1px dashed rgba(245,158,11,0.5);"></div>
+          <span><strong style="color:var(--text)">Gold shaded zone</strong> — uncertainty range (price could land anywhere in here)</span>
+        </div>
+        <div class="how-legend-item">
+          <div class="how-swatch" style="background:rgba(59,130,246,0.4);width:4px;"></div>
+          <span><strong style="color:var(--text)">Blue dashed line</strong> — where forecast starts (today)</span>
+        </div>
+      </div>
+
+      <div class="how-note">
+        ⚠️ <strong>What this is NOT:</strong> Kronos does not know about upcoming earnings, Fed meetings, geopolitical events, or news. It is a pure pattern-matching model. Always combine it with the headlines and signals below — never trade on the chart alone.
+      </div>
+    </div>
+  </div>
 
   <!-- News strip -->
   <div class="news-card" id="newsCard" style="display:none;">
@@ -608,7 +705,14 @@ function renderChart(data) {
       hovermode: "x unified",
       hoverlabel: { bgcolor: "#111720", bordercolor: "#1e2a38", font: { color: "#d4dde8", size: 12 } },
     },
-    { responsive: true, displayModeBar: false }
+    {
+      responsive: true,
+      scrollZoom: true,
+      displayModeBar: true,
+      modeBarButtonsToRemove: ["toImage","sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"],
+      modeBarButtonsToAdd: [],
+      displaylogo: false,
+    }
   );
 }
 
@@ -689,6 +793,14 @@ function renderENSO(data) {
   document.getElementById("ensoIcon").textContent = isElNino ? "🌡️" : "❄️";
   document.getElementById("ensoText").innerHTML =
     `<strong>${ensoSig.title}</strong> — This climate pattern is currently active and may influence ${data.label} prices. See Market Context below.`;
+}
+
+// ── How it works toggle ───────────────────────────────────────────────────────
+function toggleHow(btn) {
+  const body  = document.getElementById("howBody");
+  const arrow = document.getElementById("howArrow");
+  const open  = body.classList.toggle("open");
+  arrow.classList.toggle("open", open);
 }
 
 // ── News ──────────────────────────────────────────────────────────────────────
