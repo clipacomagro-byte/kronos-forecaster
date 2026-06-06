@@ -50,6 +50,7 @@ INSTRUMENTS = {
         {"label": "Sugar",   "ticker": "SB=F", "unit": "USD/lb"},
         {"label": "Coffee",  "ticker": "KC=F", "unit": "USD/lb"},
         {"label": "Cotton",  "ticker": "CT=F", "unit": "USD/lb"},
+        {"label": "Cocoa",   "ticker": "CC=F", "unit": "USD/mt"},
     ],
     "Forex": [
         {"label": "EUR/USD", "ticker": "EURUSD=X", "unit": ""},
@@ -138,6 +139,8 @@ def get_macro_signals(ticker: str, enso: dict, forecast_pct: float) -> list:
                   "La Niña": ("bullish", "La Niña strongly impacts soybean supply from Argentina and Brazil (world's top exporters), historically driving 20–40% price spikes.")},
         "KC=F":  {"El Niño": ("bearish", "El Niño brings excess rainfall to key coffee origins (Colombia, Central America), increasing supply and pressing prices lower."),
                   "La Niña": ("bullish", "La Niña drought in Brazil (world's top coffee producer) is one of the most reliable coffee price catalysts historically.")},
+        "CC=F":  {"El Niño": ("bullish", "El Niño triggers severe drought in West Africa (Ivory Coast + Ghana = ~65% of global supply), historically pushing cocoa prices up 20–50%. The 2023–24 El Niño drove cocoa to all-time highs above $10,000/mt."),
+                  "La Niña": ("bearish", "La Niña typically brings above-average rainfall to West African cocoa regions, supporting crop yields and easing supply concerns.")},
         "GC=F":  {"El Niño": ("bullish", "El Niño-driven economic disruption in commodity-dependent emerging markets historically increases safe-haven gold demand."),
                   "La Niña": ("neutral", "La Niña's inflationary pressure on food prices can support gold as a hedge, but the effect is secondary to monetary policy.")},
         "SI=F":  {"El Niño": ("neutral", "Silver has limited direct ENSO sensitivity, though industrial demand softness during El Niño-related slowdowns can weigh on prices."),
@@ -202,6 +205,11 @@ def get_macro_signals(ticker: str, enso: dict, forecast_pct: float) -> list:
         "KC=F": {
             (5,6,7):  ("volatile", "Brazilian coffee flowering and early cherry development in May–July creates the highest weather-risk window for prices."),
             (9,10):   ("bullish",  "Pre-harvest rally in coffee as roasters build inventory ahead of Q4 demand peak historically pushes prices higher in Sept–Oct."),
+        },
+        "CC=F": {
+            (10,11,12,1): ("volatile", "Main crop harvest in West Africa runs Oct–Mar. Any mid-season weather stress (dry Harmattan winds, Black Pod disease from excess rain) during this window creates sharp price swings."),
+            (4,5,6):      ("bullish",  "The mid-crop (April–June) is smaller and less reliable than the main crop. Disappointing mid-crop estimates historically trigger rallies as traders price in annual supply deficits."),
+            (7,8,9):      ("bearish",  "Pre-harvest season — traders anticipate the upcoming main crop. Prices often drift lower in anticipation of new supply arriving Oct–Nov."),
         },
         "BTC-USD": {
             (1,2,3):  ("bullish", "Q1 historically Bitcoin's strongest quarter — post-halving accumulation, tax-season inflows, and institutional rebalancing."),
