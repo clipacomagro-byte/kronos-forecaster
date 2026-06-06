@@ -190,6 +190,114 @@ def _time_ago(dt: datetime) -> str:
     return f"{s // 86400}d ago"
 
 
+def explain_headline(title: str, ticker: str) -> dict:
+    """
+    Return {implication, sentiment} for a headline in plain English.
+    Rules-based keyword matching — no external API needed.
+    """
+    t = title.lower()
+
+    rules = [
+        # ── Supply disruption / weather ──────────────────────────────────────
+        (["adverse weather", "drought", "crop damage", "frost", "flood", "hurricane", "storm"],
+         "bullish", "Bad weather is threatening supply. Less supply = prices tend to go UP. If you're holding this, that's good news short-term."),
+
+        (["record harvest", "bumper crop", "output rises", "production up", "supply glut", "oversupply"],
+         "bearish", "More supply is hitting the market. More supply = prices tend to go DOWN. Not great if you're long."),
+
+        # ── Short covering ───────────────────────────────────────────────────
+        (["short covering", "short squeeze", "shorts covering"],
+         "neutral", "Traders who bet on falling prices are being forced to BUY to close their bets — this pushes price UP temporarily. It's not real demand, so the move may fade quickly."),
+
+        # ── Technical signals ────────────────────────────────────────────────
+        (["golden cross"],
+         "bullish", "A 'golden cross' is when the 50-day average crosses above the 200-day average. Many traders see this as a BUY signal — it means short-term momentum is beating long-term trend."),
+
+        (["death cross"],
+         "bearish", "A 'death cross' is when the 50-day average falls below the 200-day average — a SELL signal for many traders. Momentum is turning negative."),
+
+        (["oversold", "rsi below 30"],
+         "bullish", "The market has fallen so fast that technical indicators say it's 'oversold' — meaning a bounce or recovery is likely soon."),
+
+        (["overbought", "rsi above 70"],
+         "bearish", "The market has risen so fast that indicators say it's 'overbought' — a pullback or correction may be coming."),
+
+        # ── Price action ─────────────────────────────────────────────────────
+        (["price jump", "prices jump", "surge", "soar", "spike", "rally", "lifts", "rises", "climbs", "gains", "hits high", "record high", "all-time high"],
+         "bullish", "Price went UP. If you already hold this, you're making money. If you don't, buying now means paying more — wait to see if it holds or pulls back."),
+
+        (["price fall", "prices fall", "slid", "sliding", "drops", "plunge", "crash", "tumble", "decline", "retreat", "sell-off", "melt down", "melts down", "weakness", "lower"],
+         "bearish", "Price went DOWN. If you hold this, your position is losing value. Could be a buying opportunity — or the start of a bigger drop. Don't catch a falling knife without more context."),
+
+        (["makes a comeback", "recovery", "rebound", "bounce", "stabilize"],
+         "bullish", "Price is recovering after a fall. Could be a re-entry opportunity, but make sure the reason it fell is actually resolved before jumping in."),
+
+        # ── Outlook / forecasts ──────────────────────────────────────────────
+        (["weak outlook", "bearish outlook", "downgrade", "cut forecast", "lower target", "negative outlook"],
+         "bearish", "Analysts or major banks are forecasting LOWER prices ahead. This is a warning sign — the people with the most data are not optimistic."),
+
+        (["bullish outlook", "upgrade", "raise target", "higher target", "price target raised", "positive outlook"],
+         "bullish", "Analysts are forecasting HIGHER prices ahead. Institutional money often follows upgrades, which can push prices further up."),
+
+        # ── Macro / rates ────────────────────────────────────────────────────
+        (["rate cut", "rate cuts", "fed cuts", "ecb cuts", "dovish"],
+         "bullish", "Central banks cutting interest rates = cheaper money = investors move into riskier assets and commodities. Generally GOOD for most markets."),
+
+        (["rate hike", "rate hikes", "fed hikes", "tightening", "hawkish"],
+         "bearish", "Central banks raising rates = money gets more expensive = investors move to safer assets. Generally NEGATIVE for commodities, crypto, and growth stocks."),
+
+        (["inflation", "cpi", "pce"],
+         "neutral", "Inflation data affects what central banks do next. High inflation → more rate hikes (bearish). Falling inflation → potential rate cuts (bullish)."),
+
+        (["dollar rises", "dollar strengthens", "usd up", "strong dollar"],
+         "bearish", "A stronger US Dollar usually pushes commodity prices DOWN (they're priced in USD). Bad for gold, oil, crypto if you're not hedged."),
+
+        (["dollar falls", "dollar weakens", "usd down", "weak dollar"],
+         "bullish", "A weaker US Dollar usually pushes commodity prices UP. Good for gold, oil, and most commodities."),
+
+        # ── OPEC / Energy specific ────────────────────────────────────────────
+        (["opec cut", "opec+ cut", "production cut", "supply cut"],
+         "bullish", "OPEC is reducing how much oil gets produced. Less oil supply = prices go UP. Good if you're long oil or energy."),
+
+        (["opec increase", "opec+ increase", "output increase", "floods market"],
+         "bearish", "More oil is being pumped. More supply = prices go DOWN. Not good if you're long energy."),
+
+        # ── Dividends / stocks ────────────────────────────────────────────────
+        (["dividend", "buyback", "share repurchase"],
+         "bullish", "The company is returning cash to shareholders — a sign of financial health. Generally positive for the stock price."),
+
+        (["layoffs", "job cuts", "restructuring", "bankruptcy", "default"],
+         "bearish", "The company or sector is in distress. This can signal deeper problems ahead — be careful if you're holding related assets."),
+
+        # ── Geopolitical ──────────────────────────────────────────────────────
+        (["sanctions", "tariff", "trade war", "conflict", "war", "attack", "geopolit"],
+         "neutral", "Political or military events are affecting this market. These moves are hard to predict — they can spike prices fast in either direction. Reduce position size if you're unsure."),
+
+        (["peace", "ceasefire", "deal", "agreement", "trade deal"],
+         "bullish", "Geopolitical tensions easing. Markets generally like stability and certainty — this tends to be positive."),
+
+        # ── Crypto specific ───────────────────────────────────────────────────
+        (["etf", "spot etf", "institutional", "blackrock", "fidelity"],
+         "bullish", "Big institutions or ETF approval = real money flowing into crypto from traditional finance. Historically one of the strongest price catalysts."),
+
+        (["hack", "exploit", "scam", "rug pull", "sec charges", "ban", "crackdown", "regulation"],
+         "bearish", "Bad news for crypto credibility or regulation. These events can cause sharp drops — especially if retail investors panic."),
+
+        (["halving", "half"],
+         "bullish", "Bitcoin halving = the reward for mining gets cut in half, reducing new supply. Historically has preceded major price rallies 12–18 months later."),
+    ]
+
+    for keywords, sentiment, implication in rules:
+        if any(kw in t for kw in keywords):
+            return {"implication": implication, "sentiment": sentiment}
+
+    # Fallback: neutral
+    return {
+        "sentiment": "neutral",
+        "implication": "No strong directional signal detected in this headline. Read the full article for context before acting.",
+    }
+
+
 def get_news(ticker: str) -> list:
     """Return up to 8 news items for the ticker, from Yahoo Finance + category feeds."""
     now = datetime.utcnow()
@@ -216,11 +324,14 @@ def get_news(ticker: str) -> list:
         key = item["title"][:60].lower()
         if key not in seen:
             seen.add(key)
+            explained = explain_headline(item["title"], ticker)
             unique.append({
-                "title":    item["title"],
-                "link":     item["link"],
-                "source":   item["source"],
-                "time_ago": _time_ago(item["published_dt"]),
+                "title":       item["title"],
+                "link":        item["link"],
+                "source":      item["source"],
+                "time_ago":    _time_ago(item["published_dt"]),
+                "implication": explained["implication"],
+                "sentiment":   explained["sentiment"],
             })
         if len(unique) >= 8:
             break

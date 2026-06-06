@@ -229,9 +229,19 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 }
 .news-item:last-child { border-bottom: none; }
 .news-item:hover { background: rgba(59,130,246,.05); }
-.news-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); flex-shrink: 0; margin-top: 6px; }
+.news-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 6px; }
+.news-dot.bullish { background: var(--green); }
+.news-dot.bearish { background: var(--red); }
+.news-dot.neutral { background: var(--muted); }
 .news-body { flex: 1; min-width: 0; }
-.news-headline { font-size: 13px; color: var(--text); line-height: 1.45; margin-bottom: 3px; }
+.news-headline { font-size: 13px; color: var(--text); line-height: 1.45; margin-bottom: 5px; }
+.news-implication {
+  font-size: 12px; line-height: 1.5; padding: 7px 10px;
+  border-radius: 6px; margin-bottom: 5px;
+}
+.news-implication.bullish { background: rgba(34,197,94,.08);  color: #86efac; border-left: 2px solid var(--green); }
+.news-implication.bearish { background: rgba(239,68,68,.08);  color: #fca5a5; border-left: 2px solid var(--red); }
+.news-implication.neutral { background: rgba(90,114,144,.08); color: var(--muted); border-left: 2px solid var(--border); }
 .news-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
 .news-source { font-weight: 600; }
 .news-empty { padding: 16px 18px; font-size: 13px; color: var(--muted); }
@@ -709,17 +719,24 @@ function renderNews(items) {
     return;
   }
 
-  list.innerHTML = items.map(item => `
+  list.innerHTML = items.map(item => {
+    const s = item.sentiment || "neutral";
+    const sentLabel = s === "bullish" ? "📈 Bullish signal" : s === "bearish" ? "📉 Bearish signal" : "➡️ Neutral";
+    return `
     <a class="news-item" href="${item.link || '#'}" target="_blank" rel="noopener">
-      <div class="news-dot"></div>
+      <div class="news-dot ${s}"></div>
       <div class="news-body">
         <div class="news-headline">${item.title}</div>
+        <div class="news-implication ${s}">
+          <strong>${sentLabel} —</strong> ${item.implication}
+        </div>
         <div class="news-meta">
           <span class="news-source">${item.source}</span>
           <span>${item.time_ago}</span>
         </div>
       </div>
-    </a>`).join("");
+    </a>`;
+  }).join("");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
