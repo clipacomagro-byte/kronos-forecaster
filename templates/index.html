@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kronos · Financial Forecast</title>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+  :root {
+    --bg:      #0d1117;
+    --surface: #161b22;
+    --border:  #30363d;
+    --text:    #e6edf3;
+    --muted:   #8b949e;
+    --accent:  #58a6ff;
+    --green:   #3fb950;
+    --red:     #f85149;
+    --gold:    #d29922;
+    --radius:  8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; }
+
+  /* ── Layout ── */
+  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+  .sidebar-header {
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--gold), #e8a020); border-radius: 6px;
+               display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .logo-name { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  .logo-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .search-wrap { padding: 12px 16px; }
+  .search-input {
+    width: 100%; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text); font-size: 13px; outline: none;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--muted); }
+
+  .category-section { padding: 0 8px 12px; }
+  .category-label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.8px;
+                    text-transform: uppercase; padding: 8px 8px 4px; }
+  .instrument-btn {
+    width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+    padding: 7px 8px; border-radius: 6px; color: var(--text); font-size: 13px;
+    display: flex; align-items: center; justify-content: space-between;
+    transition: background 0.1s;
+  }
+  .instrument-btn:hover  { background: rgba(88,166,255,.08); }
+  .instrument-btn.active { background: rgba(88,166,255,.15); color: var(--accent); font-weight: 500; }
+  .instrument-ticker { font-size: 11px; color: var(--muted); }
+  .instrument-btn.active .instrument-ticker { color: rgba(88,166,255,.7); }
+
+  /* ── Main ── */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar {
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: var(--surface);
+  }
+  .instrument-title { font-size: 20px; font-weight: 700; flex: 1; min-width: 140px; }
+  .price-badge { font-size: 22px; font-weight: 600; }
+  .price-change { font-size: 13px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+  .up   { background: rgba(63,185,80,.15); color: var(--green); }
+  .down { background: rgba(248,81,73,.15);  color: var(--red); }
+
+  /* ── Controls ── */
+  .controls {
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .ctrl-group { display: flex; flex-direction: column; gap: 3px; }
+  .ctrl-label { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; }
+  .ctrl-select, .ctrl-input {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 5px 8px; font-size: 13px; outline: none;
+  }
+  .ctrl-select:focus, .ctrl-input:focus { border-color: var(--accent); }
+  .ctrl-input { width: 72px; }
+  .run-btn {
+    padding: 8px 22px; background: var(--accent); border: none; border-radius: 6px;
+    color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: opacity 0.15s; align-self: flex-end;
+  }
+  .run-btn:hover    { opacity: 0.85; }
+  .run-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ── Chart area ── */
+  .chart-wrap { flex: 1; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  #chart { width: 100%; height: 520px; border-radius: var(--radius); overflow: hidden; }
+
+  /* ── Stats ── */
+  .stats-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 16px; min-width: 130px; flex: 1;
+  }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .stat-val   { font-size: 18px; font-weight: 600; }
+  .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Spinner / empty ── */
+  .empty-state {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; color: var(--muted); padding: 60px 24px; text-align: center;
+  }
+  .empty-icon { font-size: 48px; opacity: 0.3; }
+  .empty-msg  { font-size: 15px; }
+  .spinner    { border: 3px solid var(--border); border-top-color: var(--accent);
+               border-radius: 50%; width: 40px; height: 40px; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: #2d1b1b; border: 1px solid var(--red);
+    color: var(--red); padding: 10px 18px; border-radius: var(--radius); font-size: 13px;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none; max-width: 340px;
+  }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 700px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { max-height: 240px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <div class="logo-icon">K</div>
+        <div>
+          <div class="logo-name">Kronos</div>
+          <div class="logo-sub">Financial Forecasting</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <input class="search-input" id="searchInput" placeholder="Search instruments…" oninput="filterInstruments(this.value)">
+    </div>
+
+    <div id="instrumentList"></div>
+  </aside>
+
+  <!-- ── Main ────────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="topbar">
+      <div class="instrument-title" id="topTitle">Select an instrument</div>
+      <div id="priceInfo" style="display:flex;align-items:center;gap:10px;"></div>
+    </div>
+
+    <div class="controls">
+      <div class="ctrl-group">
+        <div class="ctrl-label">Interval</div>
+        <select class="ctrl-select" id="interval">
+          <option value="1d" selected>Daily</option>
+          <option value="1h">Hourly</option>
+          <option value="4h">4-Hour</option>
+        </select>
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Context bars</div>
+        <input class="ctrl-input" id="contextBars" type="number" value="300" min="50" max="2000">
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Forecast bars</div>
+        <input class="ctrl-input" id="predBars" type="number" value="30" min="5" max="200">
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Model</div>
+        <select class="ctrl-select" id="modelKey">
+          <option value="mini"  selected>Kronos-mini (4.1M)</option>
+          <option value="small">Kronos-small (24.7M)</option>
+          <option value="base" >Kronos-base (102.3M)</option>
+        </select>
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Temp</div>
+        <input class="ctrl-input" id="temperature" type="number" value="1.0" step="0.1" min="0.1" max="3.0">
+      </div>
+      <div class="ctrl-group">
+        <div class="ctrl-label">Samples</div>
+        <input class="ctrl-input" id="sampleCount" type="number" value="3" min="1" max="20">
+      </div>
+      <button class="run-btn" id="runBtn" onclick="runForecast()" disabled>Forecast</button>
+    </div>
+
+    <div class="chart-wrap" id="chartWrap">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">📈</div>
+        <div class="empty-msg">Choose an instrument from the sidebar<br>then click <strong>Forecast</strong> to run Kronos</div>
+      </div>
+      <div id="chart" style="display:none;"></div>
+      <div class="stats-row" id="statsRow" style="display:none;"></div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const INSTRUMENTS = {{ instruments | tojson }};
+let selectedTicker = null;
+let selectedLabel  = null;
+
+// ── Build sidebar ─────────────────────────────────────────────────────────────
+function buildSidebar(filter = "") {
+  const lf = filter.toLowerCase();
+  const el = document.getElementById("instrumentList");
+  el.innerHTML = "";
+  for (const [cat, items] of Object.entries(INSTRUMENTS)) {
+    const filtered = items.filter(i =>
+      i.label.toLowerCase().includes(lf) || i.ticker.toLowerCase().includes(lf)
+    );
+    if (!filtered.length) continue;
+    const sec = document.createElement("div");
+    sec.className = "category-section";
+    sec.innerHTML = `<div class="category-label">${cat}</div>`;
+    filtered.forEach(item => {
+      const btn = document.createElement("button");
+      btn.className = "instrument-btn" + (item.ticker === selectedTicker ? " active" : "");
+      btn.dataset.ticker = item.ticker;
+      btn.dataset.label  = item.label;
+      btn.innerHTML = `<span>${item.label}</span><span class="instrument-ticker">${item.ticker}</span>`;
+      btn.onclick = () => selectInstrument(item.ticker, item.label);
+      sec.appendChild(btn);
+    });
+    el.appendChild(sec);
+  }
+}
+
+function filterInstruments(q) { buildSidebar(q); }
+
+function selectInstrument(ticker, label) {
+  selectedTicker = ticker;
+  selectedLabel  = label;
+  document.getElementById("topTitle").textContent = label;
+  document.getElementById("runBtn").disabled = false;
+  buildSidebar(document.getElementById("searchInput").value);
+  loadPrice(ticker, label);
+}
+
+// ── Live price ────────────────────────────────────────────────────────────────
+async function loadPrice(ticker, label) {
+  const el = document.getElementById("priceInfo");
+  el.innerHTML = `<div style="color:var(--muted);font-size:13px;">Loading…</div>`;
+  try {
+    const r = await fetch(`/api/price?ticker=${encodeURIComponent(ticker)}`);
+    const d = await r.json();
+    if (d.error) { el.innerHTML = ""; return; }
+    const sign  = d.change >= 0 ? "+" : "";
+    const cls   = d.change >= 0 ? "up" : "down";
+    el.innerHTML = `
+      <div class="price-badge">${fmt(d.price, d.decimals)}</div>
+      <div class="price-change ${cls}">${sign}${fmt(d.change, d.decimals)} (${sign}${d.pct.toFixed(2)}%)</div>`;
+  } catch { el.innerHTML = ""; }
+}
+
+function fmt(v, dec = 2) {
+  return v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+// ── Forecast ──────────────────────────────────────────────────────────────────
+async function runForecast() {
+  if (!selectedTicker) return;
+  const btn = document.getElementById("runBtn");
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  showLoading();
+
+  const payload = {
+    ticker:       selectedTicker,
+    interval:     document.getElementById("interval").value,
+    context_bars: parseInt(document.getElementById("contextBars").value),
+    pred_bars:    parseInt(document.getElementById("predBars").value),
+    model:        document.getElementById("modelKey").value,
+    temperature:  parseFloat(document.getElementById("temperature").value),
+    sample_count: parseInt(document.getElementById("sampleCount").value),
+    top_p: 0.9,
+  };
+
+  try {
+    const r = await fetch("/api/forecast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) { showError(d.error || "Unknown error"); return; }
+    renderChart(d, selectedLabel);
+    renderStats(d);
+  } catch (e) {
+    showError("Request failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Forecast";
+  }
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+function renderChart(data, label) {
+  document.getElementById("emptyState").style.display = "none";
+  const chartEl = document.getElementById("chart");
+  chartEl.style.display = "block";
+
+  const hist = data.historical;
+  const fore = data.forecast;
+
+  const histTrace = {
+    type: "candlestick",
+    name: "Historical",
+    x:    hist.x, open: hist.open, high: hist.high, low: hist.low, close: hist.close,
+    increasing: { line: { color: "#3fb950" }, fillcolor: "rgba(63,185,80,0.6)" },
+    decreasing: { line: { color: "#f85149" }, fillcolor: "rgba(248,81,73,0.6)" },
+    whiskerwidth: 0.2,
+  };
+
+  const foreTrace = {
+    type: "candlestick",
+    name: "Forecast",
+    x:    fore.x, open: fore.open, high: fore.high, low: fore.low, close: fore.close,
+    increasing: { line: { color: "#d29922" }, fillcolor: "rgba(210,153,34,0.55)" },
+    decreasing: { line: { color: "#c0832c" }, fillcolor: "rgba(192,131,44,0.45)" },
+    whiskerwidth: 0.2,
+  };
+
+  // Separator line at forecast start
+  const sepX = fore.x[0];
+  const allHigh  = [...hist.high, ...fore.high];
+  const allLow   = [...hist.low,  ...fore.low];
+  const yMin = Math.min(...allLow)  * 0.998;
+  const yMax = Math.max(...allHigh) * 1.002;
+
+  const sepLine = {
+    type: "scatter", mode: "lines", name: "Forecast start",
+    x: [sepX, sepX], y: [yMin, yMax],
+    line: { color: "rgba(88,166,255,0.5)", width: 1.5, dash: "dash" },
+    showlegend: false,
+  };
+
+  // Forecast band (high-low envelope)
+  const foreEnvX = [...fore.x, ...fore.x.slice().reverse()];
+  const foreEnvY = [...fore.high, ...fore.low.slice().reverse()];
+  const band = {
+    type: "scatter", fill: "toself", mode: "none", name: "Forecast range",
+    x: foreEnvX, y: foreEnvY,
+    fillcolor: "rgba(210,153,34,0.07)",
+    line: { width: 0 }, showlegend: false,
+  };
+
+  Plotly.react("chart", [band, histTrace, foreTrace, sepLine], {
+    paper_bgcolor: "transparent",
+    plot_bgcolor:  "transparent",
+    font: { color: "#e6edf3", family: "-apple-system, sans-serif", size: 12 },
+    xaxis: {
+      gridcolor: "#21262d", showgrid: true, zeroline: false,
+      rangeslider: { visible: false },
+      color: "#8b949e", tickfont: { size: 11 },
+      type: "date",
+    },
+    yaxis: {
+      gridcolor: "#21262d", showgrid: true, zeroline: false,
+      color: "#8b949e", tickfont: { size: 11 },
+      side: "right",
+    },
+    margin: { t: 20, r: 60, b: 40, l: 10 },
+    legend: { orientation: "h", x: 0, y: 1.04, font: { size: 12 }, bgcolor: "transparent" },
+    hovermode: "x unified",
+    hoverlabel: { bgcolor: "#161b22", bordercolor: "#30363d", font: { color: "#e6edf3", size: 12 } },
+  }, { responsive: true, displayModeBar: false });
+}
+
+// ── Stats cards ───────────────────────────────────────────────────────────────
+function renderStats(data) {
+  const fore = data.forecast;
+  const hist = data.historical;
+
+  const lastClose = hist.close.at(-1);
+  const predClose = fore.close.at(-1);
+  const predOpen  = fore.open[0];
+  const change    = predClose - predOpen;
+  const pct       = (change / predOpen) * 100;
+  const predHigh  = Math.max(...fore.high);
+  const predLow   = Math.min(...fore.low);
+
+  const dec = lastClose > 100 ? 2 : lastClose > 1 ? 4 : 6;
+
+  const stats = [
+    { label: "Last Close",     val: fmtN(lastClose, dec), sub: "Current price" },
+    { label: "Forecast End",   val: fmtN(predClose, dec), sub: `${fore.x.at(-1).slice(0,10)}`, cls: change >= 0 ? "green" : "red" },
+    { label: "Expected Move",  val: `${change >= 0 ? "+" : ""}${fmtN(change, dec)}`, sub: `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`, cls: change >= 0 ? "green" : "red" },
+    { label: "Forecast High",  val: fmtN(predHigh, dec), sub: "Upper range", cls: "green" },
+    { label: "Forecast Low",   val: fmtN(predLow, dec),  sub: "Lower range", cls: "red" },
+    { label: "Model",          val: `Kronos-${data.model}`, sub: `${data.forecast.x.length} bars` },
+  ];
+
+  const row = document.getElementById("statsRow");
+  row.style.display = "flex";
+  row.innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-val" style="color:${s.cls === "green" ? "var(--green)" : s.cls === "red" ? "var(--red)" : "var(--text)"}">${s.val}</div>
+      <div class="stat-sub">${s.sub}</div>
+    </div>`).join("");
+}
+
+function fmtN(v, dec = 2) {
+  return Number(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+// ── State helpers ─────────────────────────────────────────────────────────────
+function showLoading() {
+  document.getElementById("emptyState").innerHTML = `
+    <div class="spinner"></div>
+    <div class="empty-msg">Running Kronos forecast…<br><small style="color:var(--muted)">First run downloads model weights</small></div>`;
+  document.getElementById("emptyState").style.display = "flex";
+  document.getElementById("chart").style.display = "none";
+  document.getElementById("statsRow").style.display = "none";
+}
+
+function showError(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = "⚠ " + msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 5000);
+  document.getElementById("emptyState").innerHTML = `
+    <div class="empty-icon">⚠️</div>
+    <div class="empty-msg">${msg}</div>`;
+  document.getElementById("emptyState").style.display = "flex";
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildSidebar();
+</script>
+</body>
+</html>
