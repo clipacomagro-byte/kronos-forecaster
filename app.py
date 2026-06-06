@@ -176,13 +176,13 @@ def api_forecast():
         return jsonify({"error": f"Not enough data for {ticker} ({len(df)} bars)"}), 400
 
     df = df.tail(context_bars)
-    x_ts = df.index
-    if hasattr(x_ts, "tz") and x_ts.tz is not None:
-        x_ts = x_ts.tz_localize(None)
-    x_ts = pd.DatetimeIndex(x_ts)
+    x_ts = pd.Series(df.index)
+    if hasattr(x_ts.dt, "tz") and x_ts.dt.tz is not None:
+        x_ts = x_ts.dt.tz_localize(None)
+    x_ts = pd.Series(pd.to_datetime(x_ts).values)
 
-    freq = infer_freq(x_ts)
-    y_ts = make_future_timestamps(x_ts[-1], pred_bars, freq)
+    freq = infer_freq(pd.DatetimeIndex(x_ts))
+    y_ts = pd.Series(make_future_timestamps(x_ts.iloc[-1], pred_bars, freq))
 
     # ── Run Kronos ─────────────────────────────────────────────────────────────
     try:
@@ -199,7 +199,7 @@ def api_forecast():
         return jsonify({"error": f"Prediction failed: {e}"}), 500
 
     def candles(d, label):
-        ts = d.index
+        ts = pd.DatetimeIndex(d.index)
         if hasattr(ts, "tz") and ts.tz is not None:
             ts = ts.tz_localize(None)
         return {
