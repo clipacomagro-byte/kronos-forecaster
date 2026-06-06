@@ -576,9 +576,17 @@ def api_forecast():
         return jsonify({"error": f"Prediction failed: {e}"}), 500
 
     # Forecast summary stats
-    last_close  = float(df["close"].iloc[-1])
-    pred_close  = float(pred_df["close"].iloc[-1])
+    last_close   = float(df["close"].iloc[-1])
+    pred_close   = float(pred_df["close"].iloc[-1])
     forecast_pct = (pred_close - last_close) / last_close * 100
+
+    # Clip wildly unrealistic candle wicks in the forecast (cap at ±40% of last close)
+    clip_hi = last_close * 1.40
+    clip_lo = last_close * 0.60
+    pred_df["high"]  = pred_df["high"].clip(upper=clip_hi)
+    pred_df["low"]   = pred_df["low"].clip(lower=clip_lo)
+    pred_df["open"]  = pred_df["open"].clip(lower=clip_lo, upper=clip_hi)
+    pred_df["close"] = pred_df["close"].clip(lower=clip_lo, upper=clip_hi)
 
     # Macro context
     enso    = get_enso_status()

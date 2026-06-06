@@ -319,11 +319,11 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   </div>
   <div class="ctrl">
     <label>Temperature</label>
-    <input id="temperature" type="number" value="1.0" step="0.1" min="0.1" max="3.0">
+    <input id="temperature" type="number" value="0.7" step="0.1" min="0.1" max="3.0">
   </div>
   <div class="ctrl">
     <label>Samples</label>
-    <input id="sampleCount" type="number" value="3" min="1" max="20">
+    <input id="sampleCount" type="number" value="5" min="1" max="20">
   </div>
   <button class="run-btn" id="runBtn" onclick="runForecast()" disabled>Run Forecast</button>
 </div>
@@ -607,18 +607,27 @@ function renderStats(data) {
   const f = data.forecast;
   const lc  = data.last_close;
   const fc  = f.close.at(-1);
-  const fh  = Math.max(...f.high);
-  const fl  = Math.min(...f.low);
   const pct = data.forecast_pct;
   const dec = lc > 100 ? 2 : lc > 1 ? 4 : 6;
 
+  // Use the midpoint close prices for a trend reading (less noisy than raw high/low)
+  const closes = f.close;
+  const midIdx = Math.floor(closes.length / 2);
+  const midClose = closes[midIdx];
+  const midPct   = (midClose - lc) / lc * 100;
+
+  // Trend direction from slope of closes
+  const slope = (fc - closes[0]) / closes.length;
+  const trendLabel = Math.abs(pct) < 0.5 ? "Sideways" : pct > 0 ? "▲ Upward" : "▼ Downward";
+  const trendCls   = Math.abs(pct) < 0.5 ? "" : pct > 0 ? "green" : "red";
+
   const stats = [
-    { label: "Current Price",  val: fmtN(lc, dec), sub: "Last close", cls: "" },
-    { label: "Forecast Target",val: fmtN(fc, dec), sub: f.x.at(-1).slice(0,10), cls: pct >= 0 ? "green" : "red" },
-    { label: "Expected Move",  val: `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`, sub: `${fmtN(fc - lc, dec)} per unit`, cls: pct >= 0 ? "green" : "red" },
-    { label: "Forecast High",  val: fmtN(fh, dec), sub: "Upper range", cls: "green" },
-    { label: "Forecast Low",   val: fmtN(fl, dec),  sub: "Lower range", cls: "red" },
-    { label: "Model Used",     val: `Kronos-${data.model}`, sub: `${f.x.length} bars forecast`, cls: "" },
+    { label: "Current Price",   val: fmtN(lc, dec),  sub: "Last close", cls: "" },
+    { label: "Forecast (end)",  val: fmtN(fc, dec),  sub: f.x.at(-1).slice(0,10), cls: pct >= 0 ? "green" : "red" },
+    { label: "Expected Move",   val: `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`, sub: `over ${f.x.length} bars`, cls: pct >= 0 ? "green" : "red" },
+    { label: "Midpoint Check",  val: fmtN(midClose, dec), sub: `${midPct >= 0 ? "+" : ""}${midPct.toFixed(2)}% halfway`, cls: midPct >= 0 ? "green" : "red" },
+    { label: "Trend Direction", val: trendLabel, sub: "Model consensus", cls: trendCls },
+    { label: "Model",           val: `Kronos-${data.model}`, sub: `${f.x.length} bars · probabilistic`, cls: "" },
   ];
 
   const row = document.getElementById("statsRow");
