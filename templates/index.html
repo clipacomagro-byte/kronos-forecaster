@@ -6,449 +6,665 @@
 <title>Kronos · Financial Forecast</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
-  :root {
-    --bg:      #0d1117;
-    --surface: #161b22;
-    --border:  #30363d;
-    --text:    #e6edf3;
-    --muted:   #8b949e;
-    --accent:  #58a6ff;
-    --green:   #3fb950;
-    --red:     #f85149;
-    --gold:    #d29922;
-    --radius:  8px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; }
+:root {
+  --bg:       #0a0e14;
+  --surface:  #111720;
+  --surface2: #161d28;
+  --border:   #1e2a38;
+  --text:     #d4dde8;
+  --muted:    #5a7290;
+  --accent:   #3b82f6;
+  --green:    #22c55e;
+  --red:      #ef4444;
+  --gold:     #f59e0b;
+  --purple:   #8b5cf6;
+  --radius:   10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; }
 
-  /* ── Layout ── */
-  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+/* ── Top nav ── */
+.topnav {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 24px; height: 58px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, #f59e0b, #d97706);
+             border-radius: 7px; display: flex; align-items: center; justify-content: center;
+             font-weight: 900; font-size: 16px; color: #fff; }
+.logo-name { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+.logo-sub  { font-size: 11px; color: var(--muted); margin-left: 2px; }
+.nav-search {
+  flex: 1; max-width: 320px; position: relative;
+}
+.nav-search input {
+  width: 100%; padding: 7px 12px 7px 34px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-size: 13px; outline: none;
+}
+.nav-search input:focus { border-color: var(--accent); }
+.nav-search input::placeholder { color: var(--muted); }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
+.selected-info { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.selected-name { font-size: 16px; font-weight: 600; }
+.price-display { font-size: 18px; font-weight: 700; }
+.price-chg { font-size: 12px; padding: 2px 7px; border-radius: 4px; font-weight: 600; }
+.up   { background: rgba(34,197,94,.15);  color: var(--green); }
+.down { background: rgba(239,68,68,.15);  color: var(--red); }
 
-  /* ── Sidebar ── */
-  .sidebar {
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    overflow-y: auto;
-  }
-  .sidebar-header {
-    padding: 20px 16px 12px;
-    border-bottom: 1px solid var(--border);
-  }
-  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-  .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--gold), #e8a020); border-radius: 6px;
-               display: flex; align-items: center; justify-content: center; font-size: 18px; }
-  .logo-name { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
-  .logo-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+/* ── Instrument picker ── */
+.picker {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+}
+.picker-tabs {
+  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none;
+}
+.picker-tabs::-webkit-scrollbar { display: none; }
+.cat-tab {
+  padding: 12px 16px; font-size: 13px; font-weight: 500; color: var(--muted);
+  border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent;
+  white-space: nowrap; transition: color 0.15s, border-color 0.15s;
+}
+.cat-tab:hover  { color: var(--text); }
+.cat-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-  .search-wrap { padding: 12px 16px; }
-  .search-input {
-    width: 100%; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: var(--radius); color: var(--text); font-size: 13px; outline: none;
-  }
-  .search-input:focus { border-color: var(--accent); }
-  .search-input::placeholder { color: var(--muted); }
+.instrument-grid {
+  display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 24px;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+}
+.inst-btn {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 8px 14px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; transition: all 0.15s; text-align: left;
+}
+.inst-btn:hover  { border-color: rgba(59,130,246,.4); background: rgba(59,130,246,.06); }
+.inst-btn.active { border-color: var(--accent); background: rgba(59,130,246,.12); }
+.inst-name   { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.inst-ticker { font-size: 11px; color: var(--muted); }
 
-  .category-section { padding: 0 8px 12px; }
-  .category-label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.8px;
-                    text-transform: uppercase; padding: 8px 8px 4px; }
-  .instrument-btn {
-    width: 100%; text-align: left; background: none; border: none; cursor: pointer;
-    padding: 7px 8px; border-radius: 6px; color: var(--text); font-size: 13px;
-    display: flex; align-items: center; justify-content: space-between;
-    transition: background 0.1s;
-  }
-  .instrument-btn:hover  { background: rgba(88,166,255,.08); }
-  .instrument-btn.active { background: rgba(88,166,255,.15); color: var(--accent); font-weight: 500; }
-  .instrument-ticker { font-size: 11px; color: var(--muted); }
-  .instrument-btn.active .instrument-ticker { color: rgba(88,166,255,.7); }
+/* ── Controls bar ── */
+.controls {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.ctrl { display: flex; flex-direction: column; gap: 4px; }
+.ctrl label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.ctrl select, .ctrl input {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: 6px 10px; font-size: 13px; outline: none;
+}
+.ctrl select:focus, .ctrl input:focus { border-color: var(--accent); }
+.ctrl input { width: 76px; }
+.run-btn {
+  padding: 8px 28px; background: var(--accent); border: none; border-radius: 8px;
+  color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s; letter-spacing: 0.2px;
+}
+.run-btn:hover    { opacity: 0.88; transform: translateY(-1px); }
+.run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.run-btn.loading  { opacity: 0.7; }
 
-  /* ── Main ── */
-  .main { display: flex; flex-direction: column; min-width: 0; }
+/* ── Main content ── */
+.content { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
 
-  .topbar {
-    padding: 16px 24px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    background: var(--surface);
-  }
-  .instrument-title { font-size: 20px; font-weight: 700; flex: 1; min-width: 140px; }
-  .price-badge { font-size: 22px; font-weight: 600; }
-  .price-change { font-size: 13px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
-  .up   { background: rgba(63,185,80,.15); color: var(--green); }
-  .down { background: rgba(248,81,73,.15);  color: var(--red); }
+/* ── Chart card ── */
+.chart-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden;
+}
+.chart-header {
+  display: flex; align-items: center; gap: 16px; padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.chart-title { font-size: 15px; font-weight: 600; flex: 1; }
+.legend-dot  { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
+.chart-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--muted); }
+#chart { width: 100%; height: 480px; }
 
-  /* ── Controls ── */
-  .controls {
-    padding: 14px 24px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  }
-  .ctrl-group { display: flex; flex-direction: column; gap: 3px; }
-  .ctrl-label { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; }
-  .ctrl-select, .ctrl-input {
-    background: var(--bg); border: 1px solid var(--border); color: var(--text);
-    border-radius: 6px; padding: 5px 8px; font-size: 13px; outline: none;
-  }
-  .ctrl-select:focus, .ctrl-input:focus { border-color: var(--accent); }
-  .ctrl-input { width: 72px; }
-  .run-btn {
-    padding: 8px 22px; background: var(--accent); border: none; border-radius: 6px;
-    color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
-    transition: opacity 0.15s; align-self: flex-end;
-  }
-  .run-btn:hover    { opacity: 0.85; }
-  .run-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* ── Empty / loading states ── */
+.chart-placeholder {
+  height: 480px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; color: var(--muted);
+}
+.placeholder-icon { font-size: 52px; opacity: 0.2; }
+.placeholder-text { font-size: 15px; text-align: center; line-height: 1.5; }
+.placeholder-text strong { color: var(--text); }
+.spinner {
+  width: 38px; height: 38px; border: 3px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Chart area ── */
-  .chart-wrap { flex: 1; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
-  #chart { width: 100%; height: 520px; border-radius: var(--radius); overflow: hidden; }
+/* ── Stats row ── */
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.stat-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.stat-val   { font-size: 20px; font-weight: 700; }
+.stat-sub   { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.green { color: var(--green); }
+.red   { color: var(--red); }
 
-  /* ── Stats ── */
-  .stats-row { display: flex; gap: 12px; flex-wrap: wrap; }
-  .stat-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 12px 16px; min-width: 130px; flex: 1;
-  }
-  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-  .stat-val   { font-size: 18px; font-weight: 600; }
-  .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 2px; }
+/* ── Summary section ── */
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 860px) { .summary-grid { grid-template-columns: 1fr; } }
 
-  /* ── Spinner / empty ── */
-  .empty-state {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 12px; color: var(--muted); padding: 60px 24px; text-align: center;
-  }
-  .empty-icon { font-size: 48px; opacity: 0.3; }
-  .empty-msg  { font-size: 15px; }
-  .spinner    { border: 3px solid var(--border); border-top-color: var(--accent);
-               border-radius: 50%; width: 40px; height: 40px; animation: spin 0.7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+.summary-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.summary-card-title {
+  font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted); margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+}
+.summary-headline {
+  font-size: 15px; line-height: 1.6; color: var(--text); margin-bottom: 10px;
+}
+.summary-alignment { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.disclaimer {
+  font-size: 11px; color: var(--muted); margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--border); opacity: 0.7;
+}
 
-  /* ── Toast ── */
-  .toast {
-    position: fixed; bottom: 24px; right: 24px; background: #2d1b1b; border: 1px solid var(--red);
-    color: var(--red); padding: 10px 18px; border-radius: var(--radius); font-size: 13px;
-    opacity: 0; transition: opacity 0.3s; pointer-events: none; max-width: 340px;
-  }
-  .toast.show { opacity: 1; }
+/* ── Signal cards ── */
+.signals-list { display: flex; flex-direction: column; gap: 12px; }
+.signal-card {
+  background: var(--surface2); border-radius: 8px; padding: 12px 14px;
+  border-left: 3px solid var(--border);
+  display: flex; gap: 12px;
+}
+.signal-card.bullish { border-left-color: var(--green); }
+.signal-card.bearish { border-left-color: var(--red); }
+.signal-card.volatile{ border-left-color: var(--gold); }
+.signal-card.mixed   { border-left-color: var(--purple); }
+.signal-card.neutral { border-left-color: var(--border); }
+.signal-card.context { border-left-color: var(--accent); }
+.signal-icon  { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+.signal-body  { flex: 1; min-width: 0; }
+.signal-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.signal-text  { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.bias-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 3px;
+}
+.bias-bullish { background: rgba(34,197,94,.15); color: var(--green); }
+.bias-bearish { background: rgba(239,68,68,.15);  color: var(--red); }
+.bias-volatile{ background: rgba(245,158,11,.15); color: var(--gold); }
+.bias-mixed   { background: rgba(139,92,246,.15); color: var(--purple); }
+.bias-neutral,
+.bias-context { background: rgba(59,130,246,.12); color: var(--accent); }
 
-  @media (max-width: 700px) {
-    .layout { grid-template-columns: 1fr; }
-    .sidebar { max-height: 240px; }
-  }
+/* ── ENSO banner ── */
+.enso-banner {
+  display: none; align-items: center; gap: 12px; padding: 10px 18px;
+  border-radius: 8px; font-size: 13px;
+  border: 1px solid var(--border); background: var(--surface2);
+}
+.enso-banner.el-nino  { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.06); }
+.enso-banner.la-nina  { border-color: rgba(59,130,246,.4); background: rgba(59,130,246,.06); }
+.enso-icon { font-size: 24px; }
+.enso-text strong { color: var(--text); }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: #1a0f0f; border: 1px solid var(--red); color: var(--red);
+  padding: 10px 18px; border-radius: var(--radius); font-size: 13px;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none; max-width: 360px; z-index: 999;
+}
+.toast.show { opacity: 1; }
+
+/* ── Search dropdown ── */
+.search-results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4); z-index: 200; max-height: 240px; overflow-y: auto;
+}
+.search-result-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 14px; cursor: pointer; font-size: 13px;
+  transition: background 0.1s;
+}
+.search-result-item:hover { background: rgba(59,130,246,.1); }
+.sr-label  { font-weight: 500; }
+.sr-ticker { font-size: 11px; color: var(--muted); }
+.sr-cat    { font-size: 11px; color: var(--muted); }
 </style>
 </head>
 <body>
 
-<div class="layout">
+<!-- ── Top nav ─────────────────────────────────────────────────────── -->
+<nav class="topnav">
+  <a class="logo" href="/">
+    <div class="logo-icon">K</div>
+    <div>
+      <div class="logo-name">Kronos <span class="logo-sub">AI Forecast</span></div>
+    </div>
+  </a>
+  <div class="nav-search">
+    <span class="search-icon">🔍</span>
+    <input id="searchInput" placeholder="Search any instrument…" autocomplete="off"
+           oninput="onSearch(this.value)" onblur="hideSearch()" onfocus="onSearch(this.value)">
+    <div class="search-results" id="searchResults" style="display:none;"></div>
+  </div>
+  <div class="selected-info">
+    <div class="selected-name" id="topName" style="display:none;"></div>
+    <div class="price-display" id="topPrice"></div>
+    <div class="price-chg"     id="topChg"></div>
+  </div>
+</nav>
 
-  <!-- ── Sidebar ─────────────────────────────────────────────── -->
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="logo">
-        <div class="logo-icon">K</div>
-        <div>
-          <div class="logo-name">Kronos</div>
-          <div class="logo-sub">Financial Forecasting</div>
-        </div>
+<!-- ── Instrument picker ────────────────────────────────────────────── -->
+<div class="picker">
+  <div class="picker-tabs" id="catTabs"></div>
+</div>
+<div class="instrument-grid" id="instGrid"></div>
+
+<!-- ── Controls ─────────────────────────────────────────────────────── -->
+<div class="controls">
+  <div class="ctrl">
+    <label>Interval</label>
+    <select id="interval">
+      <option value="1d" selected>Daily</option>
+      <option value="1h">Hourly</option>
+      <option value="4h">4-Hour</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <label>Context bars</label>
+    <input id="contextBars" type="number" value="300" min="50" max="2000">
+  </div>
+  <div class="ctrl">
+    <label>Forecast bars</label>
+    <input id="predBars" type="number" value="30" min="5" max="200">
+  </div>
+  <div class="ctrl">
+    <label>Model</label>
+    <select id="modelKey">
+      <option value="mini" selected>Kronos-mini · Fastest</option>
+      <option value="small">Kronos-small · Balanced</option>
+      <option value="base">Kronos-base · Most Accurate</option>
+    </select>
+  </div>
+  <div class="ctrl">
+    <label>Temperature</label>
+    <input id="temperature" type="number" value="1.0" step="0.1" min="0.1" max="3.0">
+  </div>
+  <div class="ctrl">
+    <label>Samples</label>
+    <input id="sampleCount" type="number" value="3" min="1" max="20">
+  </div>
+  <button class="run-btn" id="runBtn" onclick="runForecast()" disabled>Run Forecast</button>
+</div>
+
+<!-- ── Main content ──────────────────────────────────────────────────── -->
+<div class="content">
+
+  <!-- ENSO banner -->
+  <div class="enso-banner" id="ensoBanner">
+    <span class="enso-icon" id="ensoIcon"></span>
+    <div id="ensoText"></div>
+  </div>
+
+  <!-- Chart -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="chart-title" id="chartTitle">Select an instrument to begin</div>
+      <div class="chart-legend" id="chartLegend" style="display:none;">
+        <span><span class="legend-dot" style="background:#22c55e;"></span>Historical</span>
+        <span><span class="legend-dot" style="background:#f59e0b;"></span>Forecast</span>
+        <span><span class="legend-dot" style="background:rgba(245,158,11,.2);border:1px dashed #f59e0b;"></span>Forecast range</span>
       </div>
     </div>
-
-    <div class="search-wrap">
-      <input class="search-input" id="searchInput" placeholder="Search instruments…" oninput="filterInstruments(this.value)">
-    </div>
-
-    <div id="instrumentList"></div>
-  </aside>
-
-  <!-- ── Main ────────────────────────────────────────────────── -->
-  <main class="main">
-    <div class="topbar">
-      <div class="instrument-title" id="topTitle">Select an instrument</div>
-      <div id="priceInfo" style="display:flex;align-items:center;gap:10px;"></div>
-    </div>
-
-    <div class="controls">
-      <div class="ctrl-group">
-        <div class="ctrl-label">Interval</div>
-        <select class="ctrl-select" id="interval">
-          <option value="1d" selected>Daily</option>
-          <option value="1h">Hourly</option>
-          <option value="4h">4-Hour</option>
-        </select>
-      </div>
-      <div class="ctrl-group">
-        <div class="ctrl-label">Context bars</div>
-        <input class="ctrl-input" id="contextBars" type="number" value="300" min="50" max="2000">
-      </div>
-      <div class="ctrl-group">
-        <div class="ctrl-label">Forecast bars</div>
-        <input class="ctrl-input" id="predBars" type="number" value="30" min="5" max="200">
-      </div>
-      <div class="ctrl-group">
-        <div class="ctrl-label">Model</div>
-        <select class="ctrl-select" id="modelKey">
-          <option value="mini"  selected>Kronos-mini (4.1M)</option>
-          <option value="small">Kronos-small (24.7M)</option>
-          <option value="base" >Kronos-base (102.3M)</option>
-        </select>
-      </div>
-      <div class="ctrl-group">
-        <div class="ctrl-label">Temp</div>
-        <input class="ctrl-input" id="temperature" type="number" value="1.0" step="0.1" min="0.1" max="3.0">
-      </div>
-      <div class="ctrl-group">
-        <div class="ctrl-label">Samples</div>
-        <input class="ctrl-input" id="sampleCount" type="number" value="3" min="1" max="20">
-      </div>
-      <button class="run-btn" id="runBtn" onclick="runForecast()" disabled>Forecast</button>
-    </div>
-
-    <div class="chart-wrap" id="chartWrap">
-      <div class="empty-state" id="emptyState">
-        <div class="empty-icon">📈</div>
-        <div class="empty-msg">Choose an instrument from the sidebar<br>then click <strong>Forecast</strong> to run Kronos</div>
+    <div id="chartBody">
+      <div class="chart-placeholder" id="placeholder">
+        <div class="placeholder-icon">📈</div>
+        <div class="placeholder-text">Choose any instrument above<br>then click <strong>Run Forecast</strong></div>
       </div>
       <div id="chart" style="display:none;"></div>
-      <div class="stats-row" id="statsRow" style="display:none;"></div>
     </div>
-  </main>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow" style="display:none;"></div>
+
+  <!-- Summary + Signals -->
+  <div class="summary-grid" id="summaryGrid" style="display:none;">
+    <div class="summary-card" id="summaryCard">
+      <div class="summary-card-title">🤖 Kronos Forecast Summary</div>
+      <div class="summary-headline" id="summaryHeadline"></div>
+      <div class="summary-alignment" id="summaryAlignment"></div>
+      <div class="disclaimer" id="summaryDisclaimer"></div>
+    </div>
+    <div class="summary-card" id="signalsCard">
+      <div class="summary-card-title">🌐 Market Context & Signals</div>
+      <div class="signals-list" id="signalsList"></div>
+    </div>
+  </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
 const INSTRUMENTS = {{ instruments | tojson }};
+const CATS = Object.keys(INSTRUMENTS);
 let selectedTicker = null;
 let selectedLabel  = null;
+let activeCat      = CATS[0];
 
-// ── Build sidebar ─────────────────────────────────────────────────────────────
-function buildSidebar(filter = "") {
-  const lf = filter.toLowerCase();
-  const el = document.getElementById("instrumentList");
-  el.innerHTML = "";
-  for (const [cat, items] of Object.entries(INSTRUMENTS)) {
-    const filtered = items.filter(i =>
-      i.label.toLowerCase().includes(lf) || i.ticker.toLowerCase().includes(lf)
-    );
-    if (!filtered.length) continue;
-    const sec = document.createElement("div");
-    sec.className = "category-section";
-    sec.innerHTML = `<div class="category-label">${cat}</div>`;
-    filtered.forEach(item => {
-      const btn = document.createElement("button");
-      btn.className = "instrument-btn" + (item.ticker === selectedTicker ? " active" : "");
-      btn.dataset.ticker = item.ticker;
-      btn.dataset.label  = item.label;
-      btn.innerHTML = `<span>${item.label}</span><span class="instrument-ticker">${item.ticker}</span>`;
-      btn.onclick = () => selectInstrument(item.ticker, item.label);
-      sec.appendChild(btn);
-    });
-    el.appendChild(sec);
-  }
+// ── Build category tabs ────────────────────────────────────────────────────────
+function buildTabs() {
+  const el = document.getElementById("catTabs");
+  el.innerHTML = CATS.map(c =>
+    `<button class="cat-tab${c === activeCat ? " active" : ""}" onclick="selectCat('${c}')">${c}</button>`
+  ).join("");
 }
 
-function filterInstruments(q) { buildSidebar(q); }
+function selectCat(cat) {
+  activeCat = cat;
+  buildTabs();
+  buildGrid();
+}
 
+function buildGrid() {
+  const el = document.getElementById("instGrid");
+  el.innerHTML = INSTRUMENTS[activeCat].map(i =>
+    `<button class="inst-btn${i.ticker === selectedTicker ? " active" : ""}"
+       onclick="selectInstrument('${i.ticker}','${i.label.replace(/'/g,"\\'")}')">
+       <span class="inst-name">${i.label}</span>
+       <span class="inst-ticker">${i.ticker}</span>
+     </button>`
+  ).join("");
+}
+
+// ── Instrument selection ───────────────────────────────────────────────────────
 function selectInstrument(ticker, label) {
   selectedTicker = ticker;
   selectedLabel  = label;
-  document.getElementById("topTitle").textContent = label;
   document.getElementById("runBtn").disabled = false;
-  buildSidebar(document.getElementById("searchInput").value);
-  loadPrice(ticker, label);
+  document.getElementById("topName").textContent = label;
+  document.getElementById("topName").style.display = "block";
+  document.getElementById("chartTitle").textContent = `${label} · Forecast Chart`;
+  buildGrid();
+  loadPrice(ticker);
 }
 
-// ── Live price ────────────────────────────────────────────────────────────────
-async function loadPrice(ticker, label) {
-  const el = document.getElementById("priceInfo");
-  el.innerHTML = `<div style="color:var(--muted);font-size:13px;">Loading…</div>`;
+// ── Live price ─────────────────────────────────────────────────────────────────
+async function loadPrice(ticker) {
+  document.getElementById("topPrice").textContent = "…";
+  document.getElementById("topChg").textContent = "";
   try {
     const r = await fetch(`/api/price?ticker=${encodeURIComponent(ticker)}`);
     const d = await r.json();
-    if (d.error) { el.innerHTML = ""; return; }
-    const sign  = d.change >= 0 ? "+" : "";
-    const cls   = d.change >= 0 ? "up" : "down";
-    el.innerHTML = `
-      <div class="price-badge">${fmt(d.price, d.decimals)}</div>
-      <div class="price-change ${cls}">${sign}${fmt(d.change, d.decimals)} (${sign}${d.pct.toFixed(2)}%)</div>`;
-  } catch { el.innerHTML = ""; }
+    if (d.error) return;
+    const sign = d.change >= 0 ? "+" : "";
+    const cls  = d.change >= 0 ? "up" : "down";
+    document.getElementById("topPrice").textContent = fmtN(d.price, d.decimals);
+    const chgEl = document.getElementById("topChg");
+    chgEl.textContent = `${sign}${fmtN(d.change, d.decimals)} (${sign}${d.pct.toFixed(2)}%)`;
+    chgEl.className = `price-chg ${cls}`;
+  } catch {}
 }
 
-function fmt(v, dec = 2) {
-  return v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+// ── Search ─────────────────────────────────────────────────────────────────────
+function onSearch(q) {
+  const res = document.getElementById("searchResults");
+  if (!q.trim()) { res.style.display = "none"; return; }
+  const lq = q.toLowerCase();
+  const matches = [];
+  for (const [cat, items] of Object.entries(INSTRUMENTS)) {
+    for (const i of items) {
+      if (i.label.toLowerCase().includes(lq) || i.ticker.toLowerCase().includes(lq)) {
+        matches.push({ ...i, cat });
+      }
+    }
+  }
+  if (!matches.length) { res.style.display = "none"; return; }
+  res.innerHTML = matches.slice(0, 10).map(m =>
+    `<div class="search-result-item" onmousedown="pickSearch('${m.ticker}','${m.label.replace(/'/g,"\\'")}','${m.cat}')">
+       <span><span class="sr-label">${m.label}</span> <span class="sr-ticker">${m.ticker}</span></span>
+       <span class="sr-cat">${m.cat}</span>
+     </div>`).join("");
+  res.style.display = "block";
 }
+
+function pickSearch(ticker, label, cat) {
+  document.getElementById("searchInput").value = "";
+  document.getElementById("searchResults").style.display = "none";
+  activeCat = cat;
+  buildTabs();
+  buildGrid();
+  selectInstrument(ticker, label);
+}
+
+function hideSearch() { setTimeout(() => document.getElementById("searchResults").style.display = "none", 200); }
 
 // ── Forecast ──────────────────────────────────────────────────────────────────
 async function runForecast() {
   if (!selectedTicker) return;
   const btn = document.getElementById("runBtn");
-  btn.disabled = true;
-  btn.textContent = "Running…";
+  btn.disabled = true; btn.textContent = "Running…"; btn.classList.add("loading");
   showLoading();
-
-  const payload = {
-    ticker:       selectedTicker,
-    interval:     document.getElementById("interval").value,
-    context_bars: parseInt(document.getElementById("contextBars").value),
-    pred_bars:    parseInt(document.getElementById("predBars").value),
-    model:        document.getElementById("modelKey").value,
-    temperature:  parseFloat(document.getElementById("temperature").value),
-    sample_count: parseInt(document.getElementById("sampleCount").value),
-    top_p: 0.9,
-  };
-
   try {
     const r = await fetch("/api/forecast", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ticker:       selectedTicker,
+        interval:     document.getElementById("interval").value,
+        context_bars: parseInt(document.getElementById("contextBars").value),
+        pred_bars:    parseInt(document.getElementById("predBars").value),
+        model:        document.getElementById("modelKey").value,
+        temperature:  parseFloat(document.getElementById("temperature").value),
+        sample_count: parseInt(document.getElementById("sampleCount").value),
+        top_p: 0.9,
+      }),
     });
     const d = await r.json();
     if (!r.ok || d.error) { showError(d.error || "Unknown error"); return; }
-    renderChart(d, selectedLabel);
+    renderChart(d);
     renderStats(d);
+    renderSummary(d);
+    renderENSO(d);
   } catch (e) {
     showError("Request failed: " + e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Forecast";
+    btn.disabled = false; btn.textContent = "Run Forecast"; btn.classList.remove("loading");
   }
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
-function renderChart(data, label) {
-  document.getElementById("emptyState").style.display = "none";
+function renderChart(data) {
+  document.getElementById("placeholder").style.display = "none";
   const chartEl = document.getElementById("chart");
   chartEl.style.display = "block";
+  document.getElementById("chartLegend").style.display = "flex";
 
-  const hist = data.historical;
-  const fore = data.forecast;
+  const h = data.historical;
+  const f = data.forecast;
 
+  // Historical candlesticks
   const histTrace = {
-    type: "candlestick",
-    name: "Historical",
-    x:    hist.x, open: hist.open, high: hist.high, low: hist.low, close: hist.close,
-    increasing: { line: { color: "#3fb950" }, fillcolor: "rgba(63,185,80,0.6)" },
-    decreasing: { line: { color: "#f85149" }, fillcolor: "rgba(248,81,73,0.6)" },
-    whiskerwidth: 0.2,
+    type: "candlestick", name: "Historical",
+    x: h.x, open: h.open, high: h.high, low: h.low, close: h.close,
+    increasing: { line: { color: "#22c55e", width: 1 }, fillcolor: "rgba(34,197,94,0.55)" },
+    decreasing: { line: { color: "#ef4444", width: 1 }, fillcolor: "rgba(239,68,68,0.55)" },
+    whiskerwidth: 0.15,
   };
 
-  const foreTrace = {
-    type: "candlestick",
-    name: "Forecast",
-    x:    fore.x, open: fore.open, high: fore.high, low: fore.low, close: fore.close,
-    increasing: { line: { color: "#d29922" }, fillcolor: "rgba(210,153,34,0.55)" },
-    decreasing: { line: { color: "#c0832c" }, fillcolor: "rgba(192,131,44,0.45)" },
-    whiskerwidth: 0.2,
+  // Forecast center line (midpoint of each bar)
+  const fMid = f.open.map((o, i) => (o + f.close[i]) / 2);
+  const forecastLine = {
+    type: "scatter", mode: "lines", name: "Forecast",
+    x: f.x, y: fMid,
+    line: { color: "#f59e0b", width: 2.5 },
   };
 
-  // Separator line at forecast start
-  const sepX = fore.x[0];
-  const allHigh  = [...hist.high, ...fore.high];
-  const allLow   = [...hist.low,  ...fore.low];
-  const yMin = Math.min(...allLow)  * 0.998;
-  const yMax = Math.max(...allHigh) * 1.002;
-
-  const sepLine = {
-    type: "scatter", mode: "lines", name: "Forecast start",
-    x: [sepX, sepX], y: [yMin, yMax],
-    line: { color: "rgba(88,166,255,0.5)", width: 1.5, dash: "dash" },
-    showlegend: false,
-  };
-
-  // Forecast band (high-low envelope)
-  const foreEnvX = [...fore.x, ...fore.x.slice().reverse()];
-  const foreEnvY = [...fore.high, ...fore.low.slice().reverse()];
-  const band = {
+  // Forecast band — high to low shaded area
+  const bandX = [...f.x, ...f.x.slice().reverse()];
+  const bandY = [...f.high, ...f.low.slice().reverse()];
+  const forecastBand = {
     type: "scatter", fill: "toself", mode: "none", name: "Forecast range",
-    x: foreEnvX, y: foreEnvY,
-    fillcolor: "rgba(210,153,34,0.07)",
+    x: bandX, y: bandY,
+    fillcolor: "rgba(245,158,11,0.12)",
     line: { width: 0 }, showlegend: false,
   };
 
-  Plotly.react("chart", [band, histTrace, foreTrace, sepLine], {
-    paper_bgcolor: "transparent",
-    plot_bgcolor:  "transparent",
-    font: { color: "#e6edf3", family: "-apple-system, sans-serif", size: 12 },
-    xaxis: {
-      gridcolor: "#21262d", showgrid: true, zeroline: false,
-      rangeslider: { visible: false },
-      color: "#8b949e", tickfont: { size: 11 },
-      type: "date",
+  // High / Low boundary lines
+  const highLine = {
+    type: "scatter", mode: "lines", name: "Forecast High",
+    x: f.x, y: f.high,
+    line: { color: "rgba(245,158,11,0.45)", width: 1, dash: "dot" },
+    showlegend: false,
+  };
+  const lowLine = {
+    type: "scatter", mode: "lines", name: "Forecast Low",
+    x: f.x, y: f.low,
+    line: { color: "rgba(245,158,11,0.45)", width: 1, dash: "dot" },
+    showlegend: false,
+  };
+
+  // Vertical separator
+  const allVals = [...h.high, ...f.high, ...h.low, ...f.low];
+  const yMin = Math.min(...allVals) * 0.997;
+  const yMax = Math.max(...allVals) * 1.003;
+  const sepLine = {
+    type: "scatter", mode: "lines", x: [f.x[0], f.x[0]], y: [yMin, yMax],
+    line: { color: "rgba(59,130,246,0.5)", width: 1.5, dash: "dash" },
+    showlegend: false, name: "",
+  };
+
+  Plotly.react("chart",
+    [forecastBand, histTrace, highLine, lowLine, forecastLine, sepLine],
+    {
+      paper_bgcolor: "transparent",
+      plot_bgcolor:  "transparent",
+      font: { color: "#d4dde8", family: "-apple-system, sans-serif", size: 12 },
+      xaxis: {
+        gridcolor: "#1a2536", showgrid: true, zeroline: false,
+        rangeslider: { visible: false }, color: "#5a7290",
+        tickfont: { size: 11 }, type: "date",
+      },
+      yaxis: {
+        gridcolor: "#1a2536", showgrid: true, zeroline: false,
+        color: "#5a7290", tickfont: { size: 11 }, side: "right",
+        automargin: true,
+      },
+      margin: { t: 16, r: 70, b: 40, l: 10 },
+      legend: { orientation: "h", x: 0, y: 1.05, font: { size: 11 }, bgcolor: "transparent" },
+      hovermode: "x unified",
+      hoverlabel: { bgcolor: "#111720", bordercolor: "#1e2a38", font: { color: "#d4dde8", size: 12 } },
     },
-    yaxis: {
-      gridcolor: "#21262d", showgrid: true, zeroline: false,
-      color: "#8b949e", tickfont: { size: 11 },
-      side: "right",
-    },
-    margin: { t: 20, r: 60, b: 40, l: 10 },
-    legend: { orientation: "h", x: 0, y: 1.04, font: { size: 12 }, bgcolor: "transparent" },
-    hovermode: "x unified",
-    hoverlabel: { bgcolor: "#161b22", bordercolor: "#30363d", font: { color: "#e6edf3", size: 12 } },
-  }, { responsive: true, displayModeBar: false });
+    { responsive: true, displayModeBar: false }
+  );
 }
 
-// ── Stats cards ───────────────────────────────────────────────────────────────
+// ── Stats ─────────────────────────────────────────────────────────────────────
 function renderStats(data) {
-  const fore = data.forecast;
-  const hist = data.historical;
-
-  const lastClose = hist.close.at(-1);
-  const predClose = fore.close.at(-1);
-  const predOpen  = fore.open[0];
-  const change    = predClose - predOpen;
-  const pct       = (change / predOpen) * 100;
-  const predHigh  = Math.max(...fore.high);
-  const predLow   = Math.min(...fore.low);
-
-  const dec = lastClose > 100 ? 2 : lastClose > 1 ? 4 : 6;
+  const f = data.forecast;
+  const lc  = data.last_close;
+  const fc  = f.close.at(-1);
+  const fh  = Math.max(...f.high);
+  const fl  = Math.min(...f.low);
+  const pct = data.forecast_pct;
+  const dec = lc > 100 ? 2 : lc > 1 ? 4 : 6;
 
   const stats = [
-    { label: "Last Close",     val: fmtN(lastClose, dec), sub: "Current price" },
-    { label: "Forecast End",   val: fmtN(predClose, dec), sub: `${fore.x.at(-1).slice(0,10)}`, cls: change >= 0 ? "green" : "red" },
-    { label: "Expected Move",  val: `${change >= 0 ? "+" : ""}${fmtN(change, dec)}`, sub: `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`, cls: change >= 0 ? "green" : "red" },
-    { label: "Forecast High",  val: fmtN(predHigh, dec), sub: "Upper range", cls: "green" },
-    { label: "Forecast Low",   val: fmtN(predLow, dec),  sub: "Lower range", cls: "red" },
-    { label: "Model",          val: `Kronos-${data.model}`, sub: `${data.forecast.x.length} bars` },
+    { label: "Current Price",  val: fmtN(lc, dec), sub: "Last close", cls: "" },
+    { label: "Forecast Target",val: fmtN(fc, dec), sub: f.x.at(-1).slice(0,10), cls: pct >= 0 ? "green" : "red" },
+    { label: "Expected Move",  val: `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`, sub: `${fmtN(fc - lc, dec)} per unit`, cls: pct >= 0 ? "green" : "red" },
+    { label: "Forecast High",  val: fmtN(fh, dec), sub: "Upper range", cls: "green" },
+    { label: "Forecast Low",   val: fmtN(fl, dec),  sub: "Lower range", cls: "red" },
+    { label: "Model Used",     val: `Kronos-${data.model}`, sub: `${f.x.length} bars forecast`, cls: "" },
   ];
 
   const row = document.getElementById("statsRow");
-  row.style.display = "flex";
+  row.style.display = "grid";
   row.innerHTML = stats.map(s => `
     <div class="stat-card">
       <div class="stat-label">${s.label}</div>
-      <div class="stat-val" style="color:${s.cls === "green" ? "var(--green)" : s.cls === "red" ? "var(--red)" : "var(--text)"}">${s.val}</div>
+      <div class="stat-val ${s.cls}">${s.val}</div>
       <div class="stat-sub">${s.sub}</div>
     </div>`).join("");
 }
 
+// ── Summary & signals ─────────────────────────────────────────────────────────
+function renderSummary(data) {
+  const s = data.summary;
+  document.getElementById("summaryHeadline").innerHTML  = s.headline;
+  document.getElementById("summaryAlignment").innerHTML = s.alignment;
+  document.getElementById("summaryDisclaimer").textContent = s.disclaimer;
+
+  const signalsList = document.getElementById("signalsList");
+  if (!data.signals || !data.signals.length) {
+    signalsList.innerHTML = `<div style="color:var(--muted);font-size:13px;">No specific macro signals identified for this instrument at this time.</div>`;
+  } else {
+    signalsList.innerHTML = data.signals.map(sig => `
+      <div class="signal-card ${sig.bias}">
+        <div class="signal-icon">${sig.icon}</div>
+        <div class="signal-body">
+          <div class="signal-title">
+            ${sig.title}
+            ${sig.bias !== "context" ? `<span class="bias-tag bias-${sig.bias}">${sig.bias}</span>` : ""}
+          </div>
+          <div class="signal-text">${sig.text}</div>
+        </div>
+      </div>`).join("");
+  }
+
+  document.getElementById("summaryGrid").style.display = "grid";
+}
+
+// ── ENSO banner ───────────────────────────────────────────────────────────────
+function renderENSO(data) {
+  const signals = data.signals || [];
+  const ensoSig = signals.find(s => s.type === "enso");
+  const banner  = document.getElementById("ensoBanner");
+  if (!ensoSig) { banner.style.display = "none"; return; }
+  const isElNino = ensoSig.title.includes("El Niño");
+  banner.className = `enso-banner ${isElNino ? "el-nino" : "la-nina"}`;
+  banner.style.display = "flex";
+  document.getElementById("ensoIcon").textContent = isElNino ? "🌡️" : "❄️";
+  document.getElementById("ensoText").innerHTML =
+    `<strong>${ensoSig.title}</strong> — This climate pattern is currently active and may influence ${data.label} prices. See Market Context below.`;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtN(v, dec = 2) {
   return Number(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
-// ── State helpers ─────────────────────────────────────────────────────────────
 function showLoading() {
-  document.getElementById("emptyState").innerHTML = `
+  document.getElementById("placeholder").innerHTML = `
     <div class="spinner"></div>
-    <div class="empty-msg">Running Kronos forecast…<br><small style="color:var(--muted)">First run downloads model weights</small></div>`;
-  document.getElementById("emptyState").style.display = "flex";
+    <div class="placeholder-text">Running Kronos AI forecast…<br><small style="color:var(--muted)">First run downloads model weights (~50–400 MB)</small></div>`;
+  document.getElementById("placeholder").style.display = "flex";
   document.getElementById("chart").style.display = "none";
+  document.getElementById("chartLegend").style.display = "none";
   document.getElementById("statsRow").style.display = "none";
+  document.getElementById("summaryGrid").style.display = "none";
+  document.getElementById("ensoBanner").style.display = "none";
 }
 
 function showError(msg) {
   const t = document.getElementById("toast");
   t.textContent = "⚠ " + msg;
   t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), 5000);
-  document.getElementById("emptyState").innerHTML = `
-    <div class="empty-icon">⚠️</div>
-    <div class="empty-msg">${msg}</div>`;
-  document.getElementById("emptyState").style.display = "flex";
+  setTimeout(() => t.classList.remove("show"), 6000);
+  document.getElementById("placeholder").innerHTML = `
+    <div class="placeholder-icon">⚠️</div>
+    <div class="placeholder-text" style="color:var(--red)">${msg}</div>`;
+  document.getElementById("placeholder").style.display = "flex";
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-buildSidebar();
+buildTabs();
+buildGrid();
 </script>
 </body>
 </html>
