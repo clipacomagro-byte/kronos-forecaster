@@ -2,7 +2,10 @@ import os
 import sys
 import json
 import logging
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
+from email.utils import parsedate_to_datetime
 
 import numpy as np
 import pandas as pd
@@ -110,6 +113,120 @@ def get_enso_status():
     _enso_cache["data"] = result
     _enso_cache["fetched"] = now
     return result
+
+
+# ── News / RSS engine ─────────────────────────────────────────────────────────
+_news_cache = {}   # ticker -> {items, fetched}
+NEWS_TTL = 900     # 15-minute cache
+
+# Feed definitions per instrument category
+_TICKER_CATEGORY = {}
+for _cat, _items in {
+    "crypto":  ["BTC-USD","ETH-USD","SOL-USD","BNB-USD","XRP-USD"],
+    "forex":   ["EURUSD=X","GBPUSD=X","JPY=X","CHF=X","AUDUSD=X","CAD=X","NZDUSD=X"],
+}.items():
+    for _t in _items:
+        _TICKER_CATEGORY[_t] = _cat
+
+EXTRA_FEEDS = {
+    "crypto": [
+        "https://cointelegraph.com/rss",
+        "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    ],
+    "forex": [
+        "https://www.fxstreet.com/rss/news",
+    ],
+}
+
+def _parse_rss(xml_text: str) -> list:
+    """Parse RSS 2.0 XML, return list of {title, link, source, published_dt}."""
+    items = []
+    try:
+        root = ET.fromstring(xml_text)
+        ns = {}
+        for elem in root.iter():
+            tag = elem.tag
+            if "}" in tag:
+                tag = tag.split("}")[1]
+            if tag == "item":
+                title = link = pub = ""
+                for child in elem:
+                    ctag = child.tag.split("}")[-1]
+                    if ctag == "title":   title = (child.text or "").strip()
+                    if ctag == "link":    link  = (child.text or "").strip()
+                    if ctag == "pubDate": pub   = (child.text or "").strip()
+                if title:
+                    dt = None
+                    try:
+                        dt = parsedate_to_datetime(pub)
+                        dt = dt.replace(tzinfo=None)
+                    except Exception:
+                        dt = datetime.utcnow()
+                    domain = urlparse(link).netloc.replace("www.", "")
+                    items.append({"title": title, "link": link,
+                                  "source": domain, "published_dt": dt})
+    except Exception as e:
+        logger.warning(f"RSS parse error: {e}")
+    return items
+
+
+def _fetch_feed(url: str, timeout: int = 7) -> list:
+    try:
+        r = requests.get(url, timeout=timeout,
+                         headers={"User-Agent": "Mozilla/5.0 (compatible; KronosApp/1.0)"})
+        if r.status_code == 200:
+            return _parse_rss(r.text)
+    except Exception as e:
+        logger.warning(f"Feed fetch failed {url}: {e}")
+    return []
+
+
+def _time_ago(dt: datetime) -> str:
+    diff = datetime.utcnow() - dt
+    s = int(diff.total_seconds())
+    if s < 60:    return "just now"
+    if s < 3600:  return f"{s // 60}m ago"
+    if s < 86400: return f"{s // 3600}h ago"
+    return f"{s // 86400}d ago"
+
+
+def get_news(ticker: str) -> list:
+    """Return up to 8 news items for the ticker, from Yahoo Finance + category feeds."""
+    now = datetime.utcnow()
+    cached = _news_cache.get(ticker)
+    if cached and (now - cached["fetched"]).total_seconds() < NEWS_TTL:
+        return cached["items"]
+
+    all_items = []
+
+    # 1. Yahoo Finance per-ticker RSS (works for all tickers including futures)
+    yf_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
+    all_items += _fetch_feed(yf_url)
+
+    # 2. Category-specific extra feeds
+    cat = _TICKER_CATEGORY.get(ticker)
+    if cat and cat in EXTRA_FEEDS:
+        for feed_url in EXTRA_FEEDS[cat]:
+            all_items += _fetch_feed(feed_url)
+
+    # De-duplicate by title, sort newest first, cap at 8
+    seen = set()
+    unique = []
+    for item in sorted(all_items, key=lambda x: x["published_dt"], reverse=True):
+        key = item["title"][:60].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append({
+                "title":    item["title"],
+                "link":     item["link"],
+                "source":   item["source"],
+                "time_ago": _time_ago(item["published_dt"]),
+            })
+        if len(unique) >= 8:
+            break
+
+    _news_cache[ticker] = {"items": unique, "fetched": now}
+    return unique
 
 
 # ── Macro signal knowledge base ────────────────────────────────────────────────
@@ -386,6 +503,18 @@ def api_instruments():
     return jsonify(INSTRUMENTS)
 
 
+@app.route("/api/news")
+def api_news():
+    ticker = request.args.get("ticker", "").upper()
+    if not ticker:
+        return jsonify({"error": "ticker required"}), 400
+    try:
+        items = get_news(ticker)
+        return jsonify({"items": items})
+    except Exception as e:
+        return jsonify({"error": str(e), "items": []}), 500
+
+
 @app.route("/api/price")
 def api_price():
     ticker = request.args.get("ticker", "GC=F").upper()
@@ -469,6 +598,8 @@ def api_forecast():
             "close": d["close"].tolist(),
         }
 
+    news = get_news(ticker)
+
     return jsonify({
         "ticker":      ticker,
         "label":       label,
@@ -480,6 +611,7 @@ def api_forecast():
         "last_close":  last_close,
         "signals":     signals,
         "summary":     summary,
+        "news":        news,
     })
 
 

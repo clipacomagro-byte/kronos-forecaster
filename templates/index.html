@@ -209,6 +209,33 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .enso-icon { font-size: 24px; }
 .enso-text strong { color: var(--text); }
 
+/* ── News strip ── */
+.news-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden;
+}
+.news-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px; border-bottom: 1px solid var(--border);
+}
+.news-title { font-size: 12px; font-weight: 700; text-transform: uppercase;
+              letter-spacing: 0.6px; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+.news-freshness { font-size: 11px; color: var(--muted); }
+.news-list { display: flex; flex-direction: column; }
+.news-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 18px; border-bottom: 1px solid var(--border);
+  text-decoration: none; transition: background 0.12s;
+}
+.news-item:last-child { border-bottom: none; }
+.news-item:hover { background: rgba(59,130,246,.05); }
+.news-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); flex-shrink: 0; margin-top: 6px; }
+.news-body { flex: 1; min-width: 0; }
+.news-headline { font-size: 13px; color: var(--text); line-height: 1.45; margin-bottom: 3px; }
+.news-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
+.news-source { font-weight: 600; }
+.news-empty { padding: 16px 18px; font-size: 13px; color: var(--muted); }
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 24px; right: 24px;
@@ -332,6 +359,15 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   <!-- Stats -->
   <div class="stats-row" id="statsRow" style="display:none;"></div>
 
+  <!-- News strip -->
+  <div class="news-card" id="newsCard" style="display:none;">
+    <div class="news-header">
+      <div class="news-title">📰 Latest Headlines</div>
+      <div class="news-freshness" id="newsFreshness"></div>
+    </div>
+    <div class="news-list" id="newsList"></div>
+  </div>
+
   <!-- Summary + Signals -->
   <div class="summary-grid" id="summaryGrid" style="display:none;">
     <div class="summary-card" id="summaryCard">
@@ -392,6 +428,7 @@ function selectInstrument(ticker, label) {
   document.getElementById("chartTitle").textContent = `${label} · Forecast Chart`;
   buildGrid();
   loadPrice(ticker);
+  loadNews(ticker);   // fetch headlines immediately on instrument select
 }
 
 // ── Live price ─────────────────────────────────────────────────────────────────
@@ -471,6 +508,7 @@ async function runForecast() {
     renderStats(d);
     renderSummary(d);
     renderENSO(d);
+    if (d.news) renderNews(d.news);   // refresh news from forecast response
   } catch (e) {
     showError("Request failed: " + e.message);
   } finally {
@@ -632,6 +670,47 @@ function renderENSO(data) {
   document.getElementById("ensoIcon").textContent = isElNino ? "🌡️" : "❄️";
   document.getElementById("ensoText").innerHTML =
     `<strong>${ensoSig.title}</strong> — This climate pattern is currently active and may influence ${data.label} prices. See Market Context below.`;
+}
+
+// ── News ──────────────────────────────────────────────────────────────────────
+async function loadNews(ticker) {
+  const card = document.getElementById("newsCard");
+  const list = document.getElementById("newsList");
+  card.style.display = "block";
+  list.innerHTML = `<div class="news-empty">Loading headlines…</div>`;
+  document.getElementById("newsFreshness").textContent = "";
+  try {
+    const r = await fetch(`/api/news?ticker=${encodeURIComponent(ticker)}`);
+    const d = await r.json();
+    renderNews(d.items || []);
+  } catch {
+    list.innerHTML = `<div class="news-empty">Could not load headlines.</div>`;
+  }
+}
+
+function renderNews(items) {
+  const card = document.getElementById("newsCard");
+  const list = document.getElementById("newsList");
+  card.style.display = "block";
+  document.getElementById("newsFreshness").textContent =
+    items.length ? `${items.length} stories · updated just now` : "";
+
+  if (!items.length) {
+    list.innerHTML = `<div class="news-empty">No recent headlines found for this instrument.</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(item => `
+    <a class="news-item" href="${item.link || '#'}" target="_blank" rel="noopener">
+      <div class="news-dot"></div>
+      <div class="news-body">
+        <div class="news-headline">${item.title}</div>
+        <div class="news-meta">
+          <span class="news-source">${item.source}</span>
+          <span>${item.time_ago}</span>
+        </div>
+      </div>
+    </a>`).join("");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
