@@ -952,79 +952,88 @@ function renderBacktestChart(d) {
   revealChart();
   const chartEl = document.getElementById("chart");
   chartEl.style.display = "block";
-  document.getElementById("chartLegend").style.display = "none";
-  document.getElementById("chartTitle").textContent =
-    `${d.label} · Backtest — Kronos's call vs what really happened`;
+  setHeaderLegend([
+    { color: "#38bdf8", label: "What actually happened" },
+    { color: "#f59e0b", label: "What Kronos predicted" },
+    { color: "rgba(148,163,184,.55)", label: "History the model saw" },
+  ]);
+  document.getElementById("chartTitle").textContent = `${d.label} · Backtest`;
 
   const h = d.historical, a = d.actual, p = d.predicted;
   const entry = h.close.at(-1);
 
-  // Dimmed context candles — they're background, not the star
-  const ctxTrace = {
-    type: "candlestick", name: "Before the test",
-    x: h.x, open: h.open, high: h.high, low: h.low, close: h.close,
-    increasing: { line: { color: "rgba(34,197,94,0.4)", width: 1 }, fillcolor: "rgba(34,197,94,0.22)" },
-    decreasing: { line: { color: "rgba(239,68,68,0.4)", width: 1 }, fillcolor: "rgba(239,68,68,0.22)" },
-    whiskerwidth: 0.15, showlegend: false,
+  // History as a thin muted line — context without candle noise
+  const lead = Math.min(h.x.length, Math.max(10, Math.ceil(a.x.length * 2.5)));
+  const hX = h.x.slice(-lead), hC = h.close.slice(-lead);
+  const histLine = {
+    type: "scatter", mode: "lines", name: "History",
+    x: hX, y: hC,
+    line: { color: "rgba(148,163,184,0.55)", width: 1.5 },
+    showlegend: false,
   };
   // Both lines start from the same entry point so divergence is obvious
   const actLine = {
-    type: "scatter", mode: "lines+markers", name: "✓ What actually happened",
-    x: [h.x.at(-1), ...a.x], y: [entry, ...a.close],
-    line: { color: "#38bdf8", width: 3 },
-    marker: { size: 5, color: "#38bdf8" },
+    type: "scatter", mode: "lines+markers", name: "Actual",
+    x: [hX.at(-1), ...a.x], y: [entry, ...a.close],
+    line: { color: "#38bdf8", width: 3.5 },
+    marker: { size: 6, color: "#38bdf8" },
+    showlegend: false,
   };
   const predLine = {
-    type: "scatter", mode: "lines+markers", name: "★ What Kronos predicted",
-    x: [h.x.at(-1), ...p.x], y: [entry, ...p.close],
-    line: { color: "#f59e0b", width: 3, dash: "solid" },
-    marker: { size: 5, symbol: "diamond", color: "#f59e0b" },
+    type: "scatter", mode: "lines+markers", name: "Kronos",
+    x: [hX.at(-1), ...p.x], y: [entry, ...p.close],
+    line: { color: "#f59e0b", width: 3.5 },
+    marker: { size: 6, symbol: "diamond", color: "#f59e0b" },
+    showlegend: false,
   };
-  const bandX = [...p.x, ...p.x.slice().reverse()];
-  const bandY = [...p.high, ...p.low.slice().reverse()];
   const predBand = {
     type: "scatter", fill: "toself", mode: "none",
-    x: bandX, y: bandY, fillcolor: "rgba(245,158,11,0.10)",
+    x: [...p.x, ...p.x.slice().reverse()],
+    y: [...p.high, ...p.low.slice().reverse()],
+    fillcolor: "rgba(245,158,11,0.09)",
     line: { width: 0 }, showlegend: false, name: "Prediction range", hoverinfo: "skip",
   };
 
-  // Default zoom: the test window plus ~2.5x of lead-in context
-  const lead = Math.min(h.x.length - 1, Math.max(10, Math.ceil(a.x.length * 2.5)));
-  const x0 = h.x[h.x.length - 1 - lead];
-  const x1 = a.x.at(-1);
-  const visVals = [...h.high.slice(-lead), ...a.high, ...p.high,
-                   ...h.low.slice(-lead),  ...a.low,  ...p.low];
-  const yMin = Math.min(...visVals) * 0.995, yMax = Math.max(...visVals) * 1.005;
+  // Y-axis hugs the story: closes + prediction band, never stretched by one wick
+  const story = [...hC, ...a.close, ...p.close, ...p.high, ...p.low, entry];
+  const sMin = Math.min(...story), sMax = Math.max(...story), span = sMax - sMin || sMax * 0.01;
+  const yMin = sMin - span * 0.10, yMax = sMax + span * 0.10;
 
-  Plotly.react("chart", [predBand, ctxTrace, actLine, predLine], {
+  const aPct = d.metrics.actual_pct, pPct = d.metrics.predicted_pct;
+  const tag = v => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+
+  Plotly.react("chart", [predBand, histLine, actLine, predLine], {
     paper_bgcolor: "transparent", plot_bgcolor: "transparent",
     font: { color: "#d4dde8", family: "Inter, -apple-system, sans-serif", size: 12 },
     xaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
              rangeslider: { visible: false }, color: "#5a7290",
-             tickfont: { size: 11 }, type: "date", range: [x0, x1] },
+             tickfont: { size: 11 }, type: "date" },
     yaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
              color: "#5a7290", tickfont: { size: 11 }, side: "right",
              automargin: true, range: [yMin, yMax] },
     shapes: [{
       type: "rect", xref: "x", yref: "paper",
       x0: a.x[0], x1: a.x.at(-1), y0: 0, y1: 1,
-      fillcolor: "rgba(56,189,248,0.05)", line: { width: 0 }, layer: "below",
+      fillcolor: "rgba(56,189,248,0.045)", line: { width: 0 }, layer: "below",
     }, {
       type: "line", xref: "x", yref: "paper",
       x0: a.x[0], x1: a.x[0], y0: 0, y1: 1,
-      line: { color: "rgba(56,189,248,0.5)", width: 1.5, dash: "dash" },
+      line: { color: "rgba(56,189,248,0.45)", width: 1.5, dash: "dash" },
     }],
-    annotations: [{
-      x: a.x[Math.floor(a.x.length / 2)], y: 1, xref: "x", yref: "paper",
-      yanchor: "bottom", showarrow: false,
-      text: "TEST WINDOW — model was blind here",
-      font: { size: 10, color: "#38bdf8" }, opacity: 0.85,
-    }],
-    margin: { t: 30, r: 70, b: 40, l: 10 },
-    legend: { orientation: "h", x: 0, y: 1.12, font: { size: 12 }, bgcolor: "transparent" },
+    annotations: [
+      { x: p.x.at(-1), y: p.close.at(-1), xanchor: "left", xshift: 10, showarrow: false,
+        text: `<b>Kronos ${tag(pPct)}</b>`, font: { size: 12, color: "#f59e0b", family: "JetBrains Mono, monospace" } },
+      { x: a.x.at(-1), y: a.close.at(-1), xanchor: "left", xshift: 10, showarrow: false,
+        text: `<b>Actual ${tag(aPct)}</b>`, font: { size: 12, color: "#38bdf8", family: "JetBrains Mono, monospace" } },
+      { x: a.x[0], y: 0.02, xref: "x", yref: "paper", xanchor: "left", xshift: 6,
+        yanchor: "bottom", showarrow: false, text: "TEST WINDOW — model was blind from here",
+        font: { size: 9, color: "rgba(56,189,248,0.7)" } },
+    ],
+    margin: { t: 12, r: 110, b: 40, l: 10 },
+    showlegend: false,
     hovermode: "x unified",
     hoverlabel: { bgcolor: "#111720", bordercolor: "#1e2a38", font: { color: "#d4dde8", size: 12 } },
-  }, { responsive: true, scrollZoom: true, displayModeBar: true, displaylogo: false,
+  }, { responsive: true, scrollZoom: true, displaylogo: false,
        modeBarButtonsToRemove: ["sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"] });
 }
 
@@ -1056,13 +1065,25 @@ function renderBacktestStats(d) {
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
+function setHeaderLegend(items) {
+  const el = document.getElementById("chartLegend");
+  el.innerHTML = items.map(i =>
+    `<span><span class="legend-dot" style="background:${i.color};${i.extra || ""}"></span>${i.label}</span>`
+  ).join("");
+  el.style.display = "flex";
+}
+
 function renderChart(data) {
   document.getElementById("placeholder").style.display = "none";
   stopLoadingMsgs();
   revealChart();
   const chartEl = document.getElementById("chart");
   chartEl.style.display = "block";
-  document.getElementById("chartLegend").style.display = "flex";
+  setHeaderLegend([
+    { color: "#22c55e", label: "Historical" },
+    { color: "#f59e0b", label: "Forecast" },
+    { color: "rgba(245,158,11,.2)", label: "Forecast range", extra: "border:1px dashed #f59e0b;" },
+  ]);
   document.getElementById("chartTitle").textContent = `${data.label} · Forecast Chart`;
 
   const h = data.historical;
