@@ -9,7 +9,10 @@
 <meta property="og:title" content="Kronos · AI Financial Forecast">
 <meta property="og:description" content="AI price forecasts with honest backtesting — see how the model actually performs before you trust it.">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23f59e0b'/><text x='50' y='72' font-size='62' font-weight='bold' text-anchor='middle' fill='white' font-family='Arial'>K</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23f59e0b'/><g stroke='white' stroke-width='6' stroke-linecap='round'><line x1='30' y1='38' x2='30' y2='76'/><line x1='50' y1='28' x2='50' y2='66'/><line x1='70' y1='16' x2='70' y2='54'/></g><rect x='23' y='46' width='14' height='20' rx='3' fill='white'/><rect x='43' y='36' width='14' height='20' rx='3' fill='white'/><rect x='63' y='24' width='14' height='20' rx='3' fill='white'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
 :root {
@@ -23,11 +26,39 @@
   --green:    #22c55e;
   --red:      #ef4444;
   --gold:     #f59e0b;
+  --gold2:    #d97706;
+  --gold-grad: linear-gradient(135deg, #f5b40b, #e08b06);
   --purple:   #8b5cf6;
   --radius:   10px;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; }
+body {
+  background:
+    radial-gradient(1100px 700px at 75% -10%, rgba(245,158,11,0.055), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(59,130,246,0.04), transparent 55%),
+    var(--bg);
+  color: var(--text); font-family: var(--font-body); min-height: 100vh;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+.chart-card.reveal { animation: rise 0.5s cubic-bezier(.2,.7,.3,1); }
+.stat-card    { animation: rise 0.45s cubic-bezier(.2,.7,.3,1) both; }
+.stat-card:nth-child(2) { animation-delay: 0.05s; }
+.stat-card:nth-child(3) { animation-delay: 0.10s; }
+.stat-card:nth-child(4) { animation-delay: 0.15s; }
+.stat-card:nth-child(5) { animation-delay: 0.20s; }
+.stat-card:nth-child(6) { animation-delay: 0.25s; }
+.summary-card { animation: rise 0.5s cubic-bezier(.2,.7,.3,1) both; }
+.summary-card:nth-child(2) { animation-delay: 0.08s; }
+@media (prefers-reduced-motion: reduce) {
+  .chart-card.reveal, .stat-card, .summary-card { animation: none; }
+}
 
 /* ── Top nav ── */
 .topnav {
@@ -37,11 +68,13 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   position: sticky; top: 0; z-index: 100;
 }
 .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-.logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, #f59e0b, #d97706);
-             border-radius: 7px; display: flex; align-items: center; justify-content: center;
-             font-weight: 900; font-size: 16px; color: #fff; }
-.logo-name { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
-.logo-sub  { font-size: 11px; color: var(--muted); margin-left: 2px; }
+.logo-icon { width: 32px; height: 32px; background: var(--gold-grad);
+             border-radius: 8px; display: flex; align-items: center; justify-content: center;
+             box-shadow: 0 2px 10px rgba(245,158,11,.25); }
+.logo-icon svg { width: 20px; height: 20px; display: block; }
+.logo-name { font-family: var(--font-display); font-size: 18px; font-weight: 700;
+             color: var(--text); letter-spacing: 0.5px; }
+.logo-sub  { font-size: 11px; color: var(--muted); margin-left: 2px; font-family: var(--font-body); letter-spacing: 0; }
 .nav-search {
   flex: 1; max-width: 320px; position: relative;
 }
@@ -49,12 +82,12 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   width: 100%; padding: 7px 12px 7px 34px; background: var(--bg); border: 1px solid var(--border);
   border-radius: 8px; color: var(--text); font-size: 13px; outline: none;
 }
-.nav-search input:focus { border-color: var(--accent); }
+.nav-search input:focus { border-color: var(--gold); }
 .nav-search input::placeholder { color: var(--muted); }
 .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; pointer-events: none; }
 .selected-info { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-.selected-name { font-size: 16px; font-weight: 600; }
-.price-display { font-size: 18px; font-weight: 700; }
+.selected-name { font-family: var(--font-display); font-size: 16px; font-weight: 600; }
+.price-display { font-family: var(--font-mono); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .price-chg { font-size: 12px; padding: 2px 7px; border-radius: 4px; font-weight: 600; }
 .up   { background: rgba(34,197,94,.15);  color: var(--green); }
 .down { background: rgba(239,68,68,.15);  color: var(--red); }
@@ -74,7 +107,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   white-space: nowrap; transition: color 0.15s, border-color 0.15s;
 }
 .cat-tab:hover  { color: var(--text); }
-.cat-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.cat-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
 
 .instrument-grid {
   display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 24px;
@@ -85,8 +118,8 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   padding: 8px 14px; background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; cursor: pointer; transition: all 0.15s; text-align: left;
 }
-.inst-btn:hover  { border-color: rgba(59,130,246,.4); background: rgba(59,130,246,.06); }
-.inst-btn.active { border-color: var(--accent); background: rgba(59,130,246,.12); }
+.inst-btn:hover  { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.05); }
+.inst-btn.active { border-color: var(--gold); background: rgba(245,158,11,.1); }
 .inst-name   { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .inst-ticker { font-size: 11px; color: var(--muted); }
 
@@ -101,20 +134,21 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   background: var(--bg); border: 1px solid var(--border); color: var(--text);
   border-radius: 7px; padding: 6px 10px; font-size: 13px; outline: none;
 }
-.ctrl select:focus, .ctrl input:focus { border-color: var(--accent); }
-.ctrl input { width: 76px; }
+.ctrl select:focus, .ctrl input:focus { border-color: var(--gold); }
+.ctrl input { width: 76px; font-family: var(--font-mono); font-size: 12px; }
 .run-btn {
-  padding: 8px 28px; background: var(--accent); border: none; border-radius: 8px;
-  color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
-  transition: opacity 0.15s, transform 0.1s; letter-spacing: 0.2px;
+  padding: 9px 28px; background: var(--gold-grad); border: none; border-radius: 8px;
+  color: #221603; font-size: 14px; font-weight: 800; cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.1s; letter-spacing: 0.2px;
+  font-family: var(--font-display);
 }
-.run-btn:hover    { opacity: 0.88; transform: translateY(-1px); }
-.run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.run-btn:hover    { box-shadow: 0 4px 18px rgba(245,158,11,.35); transform: translateY(-1px); }
+.run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 .run-btn.loading  { opacity: 0.7; }
 .run-btn.secondary {
-  background: transparent; border: 1px solid var(--accent); color: var(--accent);
+  background: transparent; border: 1px solid rgba(245,158,11,.55); color: var(--gold);
 }
-.run-btn.secondary:hover { background: rgba(59,130,246,.1); }
+.run-btn.secondary:hover { background: rgba(245,158,11,.08); box-shadow: none; }
 
 /* ── Horizon segmented control ── */
 .seg { display: flex; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px; }
@@ -124,7 +158,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   transition: all 0.12s; white-space: nowrap;
 }
 .seg-btn:hover  { color: var(--text); }
-.seg-btn.active { background: var(--accent); color: #fff; }
+.seg-btn.active { background: var(--gold-grad); color: #221603; }
 
 /* ── Advanced panel ── */
 .adv-toggle {
@@ -152,7 +186,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   display: flex; align-items: center; gap: 16px; padding: 14px 18px;
   border-bottom: 1px solid var(--border);
 }
-.chart-title { font-size: 15px; font-weight: 600; flex: 1; }
+.chart-title { font-family: var(--font-display); font-size: 15px; font-weight: 600; flex: 1; }
 .legend-dot  { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
 .chart-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--muted); }
 #chart { width: 100%; height: 480px; }
@@ -178,7 +212,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   padding: 14px 16px;
 }
 .stat-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-.stat-val   { font-size: 20px; font-weight: 700; }
+.stat-val   { font-family: var(--font-mono); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .green { color: var(--green); }
 .red   { color: var(--red); }
@@ -394,9 +428,20 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 <!-- ── Top nav ─────────────────────────────────────────────────────── -->
 <nav class="topnav">
   <a class="logo" href="/">
-    <div class="logo-icon">K</div>
+    <div class="logo-icon">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <g stroke="white" stroke-width="7" stroke-linecap="round">
+          <line x1="26" y1="36" x2="26" y2="82"/>
+          <line x1="50" y1="24" x2="50" y2="70"/>
+          <line x1="74" y1="10" x2="74" y2="56"/>
+        </g>
+        <rect x="18" y="46" width="16" height="24" rx="4" fill="white"/>
+        <rect x="42" y="34" width="16" height="24" rx="4" fill="white"/>
+        <rect x="66" y="20" width="16" height="24" rx="4" fill="white"/>
+      </svg>
+    </div>
     <div>
-      <div class="logo-name">Kronos <span class="logo-sub">AI Forecast</span></div>
+      <div class="logo-name">KRONOS <span class="logo-sub">AI Forecast</span></div>
     </div>
   </a>
   <div class="nav-search">
@@ -678,7 +723,7 @@ function renderHistoryChart(d) {
 
   Plotly.react("chart", traces, {
     paper_bgcolor: "transparent", plot_bgcolor: "transparent",
-    font: { color: "#d4dde8", family: "-apple-system, sans-serif", size: 12 },
+    font: { color: "#d4dde8", family: "Inter, -apple-system, sans-serif", size: 12 },
     xaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
              rangeslider: { visible: false }, color: "#5a7290",
              tickfont: { size: 11 }, type: "date" },
@@ -840,6 +885,7 @@ async function runBacktest() {
 function renderBacktestChart(d) {
   document.getElementById("placeholder").style.display = "none";
   stopLoadingMsgs();
+  revealChart();
   const chartEl = document.getElementById("chart");
   chartEl.style.display = "block";
   document.getElementById("chartLegend").style.display = "flex";
@@ -884,7 +930,7 @@ function renderBacktestChart(d) {
 
   Plotly.react("chart", [predBand, ctxTrace, actTrace, predLine, sepLine], {
     paper_bgcolor: "transparent", plot_bgcolor: "transparent",
-    font: { color: "#d4dde8", family: "-apple-system, sans-serif", size: 12 },
+    font: { color: "#d4dde8", family: "Inter, -apple-system, sans-serif", size: 12 },
     xaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
              rangeslider: { visible: false }, color: "#5a7290",
              tickfont: { size: 11 }, type: "date" },
@@ -929,6 +975,7 @@ function renderBacktestStats(d) {
 function renderChart(data) {
   document.getElementById("placeholder").style.display = "none";
   stopLoadingMsgs();
+  revealChart();
   const chartEl = document.getElementById("chart");
   chartEl.style.display = "block";
   document.getElementById("chartLegend").style.display = "flex";
@@ -1004,7 +1051,7 @@ function renderChart(data) {
     {
       paper_bgcolor: "transparent",
       plot_bgcolor:  "transparent",
-      font: { color: "#d4dde8", family: "-apple-system, sans-serif", size: 12 },
+      font: { color: "#d4dde8", family: "Inter, -apple-system, sans-serif", size: 12 },
       xaxis: {
         gridcolor: "#1a2536", showgrid: true, zeroline: false,
         rangeslider: { visible: false }, color: "#5a7290",
@@ -1243,6 +1290,14 @@ async function renderLog() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtN(v, dec = 2) {
   return Number(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+function revealChart() {
+  const card = document.querySelector(".chart-card");
+  if (!card) return;
+  card.classList.remove("reveal");
+  void card.offsetWidth;  // restart the animation
+  card.classList.add("reveal");
 }
 
 function esc(s) {
