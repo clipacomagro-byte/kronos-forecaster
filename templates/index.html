@@ -116,6 +116,30 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 }
 .run-btn.secondary:hover { background: rgba(59,130,246,.1); }
 
+/* ── Horizon segmented control ── */
+.seg { display: flex; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px; }
+.seg-btn {
+  padding: 5px 14px; border: none; background: none; color: var(--muted);
+  font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer;
+  transition: all 0.12s; white-space: nowrap;
+}
+.seg-btn:hover  { color: var(--text); }
+.seg-btn.active { background: var(--accent); color: #fff; }
+
+/* ── Advanced panel ── */
+.adv-toggle {
+  background: none; border: none; color: var(--muted); font-size: 12px;
+  cursor: pointer; padding: 8px 4px; display: flex; align-items: center; gap: 5px;
+}
+.adv-toggle:hover { color: var(--text); }
+.adv-panel {
+  display: none; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  padding: 12px 24px; border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.adv-panel.open { display: flex; }
+.adv-hint { font-size: 11px; color: var(--muted); flex-basis: 100%; }
+
 /* ── Main content ── */
 .content { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
 
@@ -350,7 +374,10 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   .selected-info { margin-left: auto; gap: 8px; }
   .price-display { font-size: 15px; }
   .selected-name { font-size: 13px; }
-  .picker, .controls { padding-left: 14px; padding-right: 14px; }
+  .picker, .controls, .adv-panel { padding-left: 14px; padding-right: 14px; }
+  .seg { width: 100%; }
+  .seg-btn { flex: 1; padding: 6px 4px; font-size: 12px; }
+  .ctrl:has(.seg) { width: 100%; }
   .instrument-grid { padding: 10px 14px; }
   .content { padding: 14px; gap: 14px; }
   .controls { gap: 8px; }
@@ -394,6 +421,29 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 <!-- ── Controls ─────────────────────────────────────────────────────── -->
 <div class="controls">
   <div class="ctrl">
+    <label>Forecast horizon</label>
+    <div class="seg" id="horizonSeg"></div>
+  </div>
+  <div class="ctrl">
+    <label>Model quality</label>
+    <select id="modelKey">
+      <option value="mini" selected>⚡ Fast</option>
+      <option value="small">⚖️ Balanced</option>
+      <option value="base">🎓 Best (slower)</option>
+    </select>
+  </div>
+  <button class="run-btn" id="runBtn" onclick="runForecast()" disabled>Run Forecast</button>
+  <button class="run-btn secondary" id="backtestBtn" onclick="runBacktest()" disabled
+          title="Hold out the most recent bars, forecast them blind, and compare prediction vs what actually happened">
+    🎯 Backtest Accuracy
+  </button>
+  <button class="adv-toggle" onclick="toggleAdv()" title="Interval, context window, temperature, samples">
+    ⚙ Advanced <span id="advArrow">▾</span>
+  </button>
+</div>
+<div class="adv-panel" id="advPanel">
+  <div class="adv-hint">For power users — sensible defaults are already set. Horizon buttons above control "Forecast bars" for you.</div>
+  <div class="ctrl">
     <label>Interval</label>
     <select id="interval">
       <option value="1d" selected>Daily</option>
@@ -407,15 +457,7 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   </div>
   <div class="ctrl">
     <label>Forecast bars</label>
-    <input id="predBars" type="number" value="30" min="5" max="200">
-  </div>
-  <div class="ctrl">
-    <label>Model</label>
-    <select id="modelKey">
-      <option value="mini" selected>Kronos-mini · Fastest</option>
-      <option value="small">Kronos-small · Balanced</option>
-      <option value="base">Kronos-base · Most Accurate</option>
-    </select>
+    <input id="predBars" type="number" value="22" min="1" max="200">
   </div>
   <div class="ctrl">
     <label>Temperature</label>
@@ -423,13 +465,8 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   </div>
   <div class="ctrl">
     <label>Samples</label>
-    <input id="sampleCount" type="number" value="5" min="1" max="20">
+    <input id="sampleCount" type="number" value="5" min="1" max="10">
   </div>
-  <button class="run-btn" id="runBtn" onclick="runForecast()" disabled>Run Forecast</button>
-  <button class="run-btn secondary" id="backtestBtn" onclick="runBacktest()" disabled
-          title="Hold out the most recent bars, forecast them blind, and compare prediction vs what actually happened">
-    🎯 Backtest Accuracy
-  </button>
 </div>
 
 <!-- ── Main content ──────────────────────────────────────────────────── -->
@@ -1256,6 +1293,33 @@ function showError(msg) {
   document.getElementById("placeholder").style.display = "flex";
 }
 
+// ── Horizon picker: traders think in time, not bars ───────────────────────────
+const HORIZONS = {
+  "1d": [ { label: "1 Week", bars: 5 },  { label: "2 Weeks", bars: 10 }, { label: "1 Month", bars: 22 },  { label: "3 Months", bars: 66 } ],
+  "4h": [ { label: "3 Days", bars: 18 }, { label: "1 Week", bars: 42 },  { label: "2 Weeks", bars: 84 },  { label: "1 Month", bars: 180 } ],
+  "1h": [ { label: "1 Day", bars: 24 },  { label: "3 Days", bars: 72 },  { label: "1 Week", bars: 168 },  { label: "2 Weeks", bars: 200 } ],
+};
+
+function buildHorizons() {
+  const interval = document.getElementById("interval").value;
+  const cur = parseInt(document.getElementById("predBars").value);
+  document.getElementById("horizonSeg").innerHTML = (HORIZONS[interval] || HORIZONS["1d"]).map(h =>
+    `<button class="seg-btn${h.bars === cur ? " active" : ""}" onclick="setHorizon(${h.bars}, this)">${h.label}</button>`
+  ).join("");
+}
+
+function setHorizon(bars, btn) {
+  document.getElementById("predBars").value = bars;
+  document.querySelectorAll("#horizonSeg .seg-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  saveState();
+}
+
+function toggleAdv() {
+  const open = document.getElementById("advPanel").classList.toggle("open");
+  document.getElementById("advArrow").textContent = open ? "▴" : "▾";
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 function findInstrument(ticker) {
   for (const [cat, items] of Object.entries(INSTRUMENTS))
@@ -1279,10 +1343,13 @@ if (urlInst) {
 }
 
 renderLog();
+buildHorizons();
 SETTING_IDS.forEach(id => document.getElementById(id).addEventListener("change", saveState));
 document.getElementById("interval").addEventListener("change", () => {
+  buildHorizons();
   if (selectedTicker) loadHistory(selectedTicker);
 });
+document.getElementById("predBars").addEventListener("change", buildHorizons);
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && document.activeElement !== document.getElementById("searchInput")
       && !document.getElementById("runBtn").disabled) {
