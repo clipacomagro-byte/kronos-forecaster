@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kronos · Financial Forecast</title>
+<title>Kronos · AI Financial Forecast</title>
+<meta name="description" content="AI price forecasts for commodities, crypto, forex and stocks — with honest backtesting, live news context and macro signals. Powered by the Kronos foundation model.">
+<meta name="theme-color" content="#0a0e14">
+<meta property="og:title" content="Kronos · AI Financial Forecast">
+<meta property="og:description" content="AI price forecasts with honest backtesting — see how the model actually performs before you trust it.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23f59e0b'/><text x='50' y='72' font-size='62' font-weight='bold' text-anchor='middle' fill='white' font-family='Arial'>K</text></svg>">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
 :root {
@@ -316,6 +322,44 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .sr-label  { font-weight: 500; }
 .sr-ticker { font-size: 11px; color: var(--muted); }
 .sr-cat    { font-size: 11px; color: var(--muted); }
+
+/* ── Forecast log ── */
+.log-item {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 18px; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.log-item:last-child { border-bottom: none; }
+.log-date  { color: var(--muted); font-size: 11px; min-width: 86px; }
+.log-inst  { font-weight: 600; min-width: 90px; }
+.log-call  { color: var(--muted); }
+.log-actual{ font-weight: 600; }
+.log-verdict { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-left: auto; }
+.log-verdict.ok      { background: rgba(34,197,94,.15);  color: var(--green); }
+.log-verdict.miss    { background: rgba(239,68,68,.15);  color: var(--red); }
+.log-verdict.pending { background: rgba(90,114,144,.15); color: var(--muted); }
+.log-clear {
+  background: none; border: none; color: var(--muted); font-size: 11px;
+  cursor: pointer; text-decoration: underline;
+}
+.log-clear:hover { color: var(--red); }
+
+/* ── Mobile ── */
+@media (max-width: 720px) {
+  .topnav { flex-wrap: wrap; height: auto; padding: 10px 14px; gap: 10px; }
+  .nav-search { order: 3; max-width: 100%; flex-basis: 100%; }
+  .selected-info { margin-left: auto; gap: 8px; }
+  .price-display { font-size: 15px; }
+  .selected-name { font-size: 13px; }
+  .picker, .controls { padding-left: 14px; padding-right: 14px; }
+  .instrument-grid { padding: 10px 14px; }
+  .content { padding: 14px; gap: 14px; }
+  .controls { gap: 8px; }
+  .ctrl input { width: 64px; }
+  .run-btn { flex: 1; padding: 10px 12px; }
+  #chart, .chart-placeholder { height: 360px; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .stat-val { font-size: 16px; }
+}
 </style>
 </head>
 <body>
@@ -483,6 +527,15 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     <div class="news-list" id="newsList"></div>
   </div>
 
+  <!-- Forecast log -->
+  <div class="news-card" id="logCard" style="display:none;">
+    <div class="news-header">
+      <div class="news-title">📒 Your Forecast Log <span style="font-weight:400;text-transform:none;letter-spacing:0;">— what Kronos told you, graded live</span></div>
+      <button class="log-clear" onclick="clearLog()">clear</button>
+    </div>
+    <div id="logList"></div>
+  </div>
+
   <!-- Summary + Signals -->
   <div class="summary-grid" id="summaryGrid" style="display:none;">
     <div class="summary-card" id="summaryCard">
@@ -544,8 +597,65 @@ function selectInstrument(ticker, label) {
   document.getElementById("chartTitle").textContent = `${label} · Forecast Chart`;
   buildGrid();
   loadPrice(ticker);
-  loadNews(ticker);   // fetch headlines immediately on instrument select
+  loadNews(ticker);     // fetch headlines immediately on instrument select
+  loadHistory(ticker);  // show the market right away — no need to wait for the model
   saveState();
+  try { history.replaceState(null, "", `?t=${encodeURIComponent(ticker)}`); } catch {}
+}
+
+// ── Instant history chart (shown before any forecast is run) ─────────────────
+let _historyReq = 0;
+async function loadHistory(ticker) {
+  const reqId = ++_historyReq;
+  try {
+    const interval = document.getElementById("interval").value;
+    const r = await fetch(`/api/history?ticker=${encodeURIComponent(ticker)}&interval=${interval}&bars=180`);
+    const d = await r.json();
+    if (d.error || reqId !== _historyReq) return;  // stale response — user moved on
+    renderHistoryChart(d);
+  } catch {}
+}
+
+function renderHistoryChart(d) {
+  document.getElementById("placeholder").style.display = "none";
+  const chartEl = document.getElementById("chart");
+  chartEl.style.display = "block";
+  document.getElementById("chartLegend").style.display = "none";
+  document.getElementById("chartTitle").textContent =
+    `${d.label} · Recent price — click Run Forecast to see where Kronos thinks it goes`;
+
+  const h = d.historical;
+  const hasVolume = Array.isArray(h.volume) && h.volume.some(v => v > 0);
+  const traces = [{
+    type: "candlestick", name: d.label,
+    x: h.x, open: h.open, high: h.high, low: h.low, close: h.close,
+    increasing: { line: { color: "#22c55e", width: 1 }, fillcolor: "rgba(34,197,94,0.55)" },
+    decreasing: { line: { color: "#ef4444", width: 1 }, fillcolor: "rgba(239,68,68,0.55)" },
+    whiskerwidth: 0.15, showlegend: false,
+  }];
+  if (hasVolume) traces.push({
+    type: "bar", name: "Volume", x: h.x, y: h.volume, yaxis: "y2",
+    marker: { color: h.close.map((c, i) => c >= h.open[i] ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.35)") },
+    showlegend: false, hoverinfo: "skip",
+  });
+
+  Plotly.react("chart", traces, {
+    paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+    font: { color: "#d4dde8", family: "-apple-system, sans-serif", size: 12 },
+    xaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
+             rangeslider: { visible: false }, color: "#5a7290",
+             tickfont: { size: 11 }, type: "date" },
+    yaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
+             color: "#5a7290", tickfont: { size: 11 }, side: "right",
+             automargin: true, domain: hasVolume ? [0.26, 1] : [0, 1] },
+    yaxis2: hasVolume ? { domain: [0, 0.18], gridcolor: "#1a2536", showgrid: false,
+                          zeroline: false, color: "#5a7290", tickfont: { size: 10 },
+                          side: "right", automargin: true } : undefined,
+    margin: { t: 16, r: 70, b: 40, l: 10 },
+    hovermode: "x unified",
+    hoverlabel: { bgcolor: "#111720", bordercolor: "#1e2a38", font: { color: "#d4dde8", size: 12 } },
+  }, { responsive: true, scrollZoom: true, displayModeBar: true, displaylogo: false,
+       modeBarButtonsToRemove: ["sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"] });
 }
 
 // ── Persist selection + settings across refreshes ─────────────────────────────
@@ -645,6 +755,7 @@ async function runForecast() {
     renderSummary(d);
     renderENSO(d);
     if (d.news) renderNews(d.news);   // refresh news from forecast response
+    logForecast(d);
   } catch (e) {
     showError("Request failed: " + e.message);
   } finally {
@@ -747,7 +858,7 @@ function renderBacktestChart(d) {
     hovermode: "x unified",
     hoverlabel: { bgcolor: "#111720", bordercolor: "#1e2a38", font: { color: "#d4dde8", size: 12 } },
   }, { responsive: true, scrollZoom: true, displayModeBar: true, displaylogo: false,
-       modeBarButtonsToRemove: ["toImage","sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"] });
+       modeBarButtonsToRemove: ["sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"] });
 }
 
 function renderBacktestStats(d) {
@@ -882,7 +993,7 @@ function renderChart(data) {
       responsive: true,
       scrollZoom: true,
       displayModeBar: true,
-      modeBarButtonsToRemove: ["toImage","sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"],
+      modeBarButtonsToRemove: ["sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"],
       modeBarButtonsToAdd: [],
       displaylogo: false,
     }
@@ -1025,6 +1136,73 @@ function renderNews(items) {
   }).join("");
 }
 
+// ── Forecast log: every call Kronos makes for you, graded against live price ──
+function getLog() {
+  try { return JSON.parse(localStorage.getItem("kronosLog")) || []; } catch { return []; }
+}
+
+function logForecast(d) {
+  const log = getLog();
+  log.unshift({
+    ts: Date.now(), ticker: d.ticker, label: d.label, model: d.model,
+    interval: d.interval, bars: d.forecast.x.length,
+    predicted_pct: d.forecast_pct, baseline: d.last_close,
+  });
+  try { localStorage.setItem("kronosLog", JSON.stringify(log.slice(0, 20))); } catch {}
+  renderLog();
+}
+
+function clearLog() {
+  try { localStorage.removeItem("kronosLog"); } catch {}
+  renderLog();
+}
+
+async function renderLog() {
+  const card = document.getElementById("logCard");
+  const list = document.getElementById("logList");
+  const log = getLog();
+  if (!log.length) { card.style.display = "none"; return; }
+  card.style.display = "block";
+
+  // One live price fetch per distinct ticker, to grade each call so far
+  const tickers = [...new Set(log.map(e => e.ticker))];
+  const prices = {};
+  await Promise.all(tickers.map(async t => {
+    try {
+      const r = await fetch(`/api/price?ticker=${encodeURIComponent(t)}`);
+      const d = await r.json();
+      if (!d.error) prices[t] = d.price;
+    } catch {}
+  }));
+
+  list.innerHTML = log.map(e => {
+    const date = new Date(e.ts).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+               + " " + new Date(e.ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const pSign = e.predicted_pct >= 0 ? "+" : "";
+    let actualHtml = `<span class="log-actual" style="color:var(--muted)">awaiting data</span>`;
+    let verdict = `<span class="log-verdict pending">PENDING</span>`;
+    const live = prices[e.ticker];
+    if (live && e.baseline) {
+      const actual = (live - e.baseline) / e.baseline * 100;
+      const aSign = actual >= 0 ? "+" : "";
+      const cls = actual >= 0 ? "green" : "red";
+      actualHtml = `<span class="log-actual ${cls}">${aSign}${actual.toFixed(2)}% so far</span>`;
+      if (Math.abs(actual) >= 0.05) {
+        const ok = (actual >= 0) === (e.predicted_pct >= 0);
+        verdict = ok ? `<span class="log-verdict ok">✓ ON TRACK</span>`
+                     : `<span class="log-verdict miss">✗ OFF TRACK</span>`;
+      }
+    }
+    return `<div class="log-item">
+      <span class="log-date">${date}</span>
+      <span class="log-inst">${esc(e.label)}</span>
+      <span class="log-call">called <strong style="color:${e.predicted_pct >= 0 ? "var(--green)" : "var(--red)"}">${pSign}${e.predicted_pct.toFixed(2)}%</strong> over ${e.bars} bars (${esc(e.model)})</span>
+      ${actualHtml}
+      ${verdict}
+    </div>`;
+  }).join("");
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtN(v, dec = 2) {
   return Number(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
@@ -1079,10 +1257,38 @@ function showError(msg) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+function findInstrument(ticker) {
+  for (const [cat, items] of Object.entries(INSTRUMENTS))
+    for (const i of items)
+      if (i.ticker === ticker) return { ...i, cat };
+  return null;
+}
+
 buildTabs();
 buildGrid();
-restoreState();
+
+// Shared links (?t=TICKER) win over remembered state
+const urlTicker = new URLSearchParams(location.search).get("t");
+const urlInst = urlTicker ? findInstrument(urlTicker.toUpperCase()) : null;
+if (urlInst) {
+  activeCat = urlInst.cat;
+  buildTabs(); buildGrid();
+  selectInstrument(urlInst.ticker, urlInst.label);
+} else {
+  restoreState();
+}
+
+renderLog();
 SETTING_IDS.forEach(id => document.getElementById(id).addEventListener("change", saveState));
+document.getElementById("interval").addEventListener("change", () => {
+  if (selectedTicker) loadHistory(selectedTicker);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && document.activeElement !== document.getElementById("searchInput")
+      && !document.getElementById("runBtn").disabled) {
+    runForecast();
+  }
+});
 </script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import logging
 import threading
 import xml.etree.ElementTree as ET
@@ -709,13 +710,52 @@ def candles(d: pd.DataFrame) -> dict:
     }
 
 
+# ── Rate limiting (model endpoints are CPU-heavy) ─────────────────────────────
+_rate: dict = {}
+RATE_LIMIT  = 8     # model runs
+RATE_WINDOW = 300   # per 5 minutes per IP
+
+def rate_limited() -> bool:
+    ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "?")
+          .split(",")[0].strip())
+    now = time.time()
+    hits = [t for t in _rate.get(ip, []) if now - t < RATE_WINDOW]
+    if len(hits) >= RATE_LIMIT:
+        _rate[ip] = hits
+        return True
+    hits.append(now)
+    _rate[ip] = hits
+    return False
+
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/history")
+def api_history():
+    """Recent OHLCV for instant charting — no model involved, fast."""
+    ticker   = request.args.get("ticker", "").upper()[:20]
+    interval = request.args.get("interval", "1d")
+    if interval not in ("1d", "1h", "4h"):
+        interval = "1d"
+    bars = max(50, min(int(request.args.get("bars", 180)), 500))
+    if not ticker:
+        return jsonify({"error": "ticker required"}), 400
+    try:
+        df = fetch_ohlcv(ticker, interval, bars)
+        return jsonify({"ticker": ticker, "label": ticker_to_label(ticker),
+                        "historical": candles(df)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/forecast", methods=["POST"])
 def api_forecast():
+    if rate_limited():
+        return jsonify({"error": "Rate limit reached — max 8 model runs per 5 minutes. "
+                                 "Please wait a moment."}), 429
     p = parse_forecast_params(request.get_json(force=True))
     ticker, interval = p["ticker"], p["interval"]
     pred_bars, model_key = p["pred_bars"], p["model_key"]
@@ -783,6 +823,9 @@ def api_backtest():
     Hold out the most recent `pred_bars` bars, forecast them blind from earlier
     data, and compare prediction vs reality. The honest accuracy check.
     """
+    if rate_limited():
+        return jsonify({"error": "Rate limit reached — max 8 model runs per 5 minutes. "
+                                 "Please wait a moment."}), 429
     p = parse_forecast_params(request.get_json(force=True))
     ticker, interval = p["ticker"], p["interval"]
     pred_bars, model_key = p["pred_bars"], p["model_key"]
