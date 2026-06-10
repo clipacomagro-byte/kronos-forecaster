@@ -381,6 +381,26 @@ body {
 .sr-ticker { font-size: 11px; color: var(--muted); }
 .sr-cat    { font-size: 11px; color: var(--muted); }
 
+/* ── P&L simulator ── */
+.pnl-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.pnl-inputs { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+.pnl-result { display: flex; gap: 24px; flex-wrap: wrap; align-items: baseline; }
+.pnl-big  { font-family: var(--font-mono); font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pnl-mid  { font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+.pnl-sub  { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.pnl-pos  { font-family: var(--font-display); font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 5px; }
+.pnl-pos.long  { background: rgba(34,197,94,.15); color: var(--green); }
+.pnl-pos.short { background: rgba(239,68,68,.15); color: var(--red); }
+.pnl-warn {
+  margin-top: 12px; font-size: 12px; line-height: 1.6; padding: 9px 12px;
+  background: rgba(239,68,68,.08); border-left: 3px solid var(--red);
+  border-radius: 6px; color: #fca5a5;
+}
+.pnl-note { margin-top: 12px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+
 /* ── Forecast log ── */
 .log-item {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -545,6 +565,35 @@ body {
   <!-- Stats -->
   <div class="stats-row" id="statsRow" style="display:none;"></div>
 
+  <!-- P&L simulator -->
+  <div class="pnl-card" id="pnlCard" style="display:none;">
+    <div class="summary-card-title">💰 Position Simulator <span id="pnlMode" style="text-transform:none;letter-spacing:0;font-weight:400;"></span></div>
+    <div class="pnl-inputs">
+      <div class="ctrl">
+        <label>Your stake ($)</label>
+        <input id="pnlStake" type="number" value="1000" min="10" step="100" style="width:110px;">
+      </div>
+      <div class="ctrl">
+        <label>Leverage</label>
+        <select id="pnlLev">
+          <option value="1">1× (spot)</option>
+          <option value="2">2×</option>
+          <option value="3">3×</option>
+          <option value="5" selected>5×</option>
+          <option value="10">10×</option>
+          <option value="20">20×</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>Direction</label>
+        <span class="pnl-pos" id="pnlPos">—</span>
+      </div>
+    </div>
+    <div class="pnl-result" id="pnlResult"></div>
+    <div class="pnl-warn" id="pnlWarn" style="display:none;"></div>
+    <div class="pnl-note" id="pnlNote"></div>
+  </div>
+
   <!-- How it works -->
   <div class="how-card">
     <button class="how-toggle" onclick="toggleHow(this)">
@@ -678,6 +727,7 @@ function selectInstrument(ticker, label) {
   document.getElementById("topName").style.display = "block";
   document.getElementById("chartTitle").textContent = `${label} · Forecast Chart`;
   buildGrid();
+  buildHorizons(true);  // crypto gets 7-day weeks; snap to the nearest horizon
   loadPrice(ticker);
   loadNews(ticker);     // fetch headlines immediately on instrument select
   loadHistory(ticker);  // show the market right away — no need to wait for the model
@@ -811,6 +861,7 @@ function hideSearch() { setTimeout(() => document.getElementById("searchResults"
 // ── Forecast ──────────────────────────────────────────────────────────────────
 async function runForecast() {
   if (!selectedTicker) return;
+  _historyReq++;  // invalidate any in-flight history fetch so it can't overwrite results
   saveState();
   const btn = document.getElementById("runBtn");
   btn.disabled = true; btn.textContent = "Running…"; btn.classList.add("loading");
@@ -838,6 +889,12 @@ async function runForecast() {
     renderENSO(d);
     if (d.news) renderNews(d.news);   // refresh news from forecast response
     logForecast(d);
+    setupPnl({
+      mode: "forecast", label: d.label,
+      entry: d.last_close, exit: d.forecast.close.at(-1),
+      changePct: d.forecast_pct, direction: d.forecast_pct >= 0 ? 1 : -1,
+      minLow: Math.min(...d.forecast.low), maxHigh: Math.max(...d.forecast.high),
+    });
   } catch (e) {
     showError("Request failed: " + e.message);
   } finally {
@@ -848,6 +905,7 @@ async function runForecast() {
 // ── Backtest ──────────────────────────────────────────────────────────────────
 async function runBacktest() {
   if (!selectedTicker) return;
+  _historyReq++;  // invalidate any in-flight history fetch so it can't overwrite results
   saveState();
   const btn = document.getElementById("backtestBtn");
   btn.disabled = true; btn.textContent = "Backtesting…"; btn.classList.add("loading");
@@ -875,6 +933,12 @@ async function runBacktest() {
     if (!r.ok || d.error) { showError(d.error || "Unknown error"); return; }
     renderBacktestChart(d);
     renderBacktestStats(d);
+    setupPnl({
+      mode: "backtest", label: d.label,
+      entry: d.historical.close.at(-1), exit: d.actual.close.at(-1),
+      changePct: d.metrics.actual_pct, direction: d.metrics.predicted_pct >= 0 ? 1 : -1,
+      minLow: Math.min(...d.actual.low), maxHigh: Math.max(...d.actual.high),
+    });
   } catch (e) {
     showError("Request failed: " + e.message);
   } finally {
@@ -888,56 +952,76 @@ function renderBacktestChart(d) {
   revealChart();
   const chartEl = document.getElementById("chart");
   chartEl.style.display = "block";
-  document.getElementById("chartLegend").style.display = "flex";
+  document.getElementById("chartLegend").style.display = "none";
   document.getElementById("chartTitle").textContent =
-    `${d.label} · Backtest — gold = what Kronos predicted, candles = what actually happened`;
+    `${d.label} · Backtest — Kronos's call vs what really happened`;
 
   const h = d.historical, a = d.actual, p = d.predicted;
+  const entry = h.close.at(-1);
 
+  // Dimmed context candles — they're background, not the star
   const ctxTrace = {
-    type: "candlestick", name: "History (model saw this)",
+    type: "candlestick", name: "Before the test",
     x: h.x, open: h.open, high: h.high, low: h.low, close: h.close,
-    increasing: { line: { color: "#22c55e", width: 1 }, fillcolor: "rgba(34,197,94,0.55)" },
-    decreasing: { line: { color: "#ef4444", width: 1 }, fillcolor: "rgba(239,68,68,0.55)" },
-    whiskerwidth: 0.15,
+    increasing: { line: { color: "rgba(34,197,94,0.4)", width: 1 }, fillcolor: "rgba(34,197,94,0.22)" },
+    decreasing: { line: { color: "rgba(239,68,68,0.4)", width: 1 }, fillcolor: "rgba(239,68,68,0.22)" },
+    whiskerwidth: 0.15, showlegend: false,
   };
-  const actTrace = {
-    type: "candlestick", name: "Actual (model never saw this)",
-    x: a.x, open: a.open, high: a.high, low: a.low, close: a.close,
-    increasing: { line: { color: "#22c55e", width: 1 }, fillcolor: "rgba(34,197,94,0.55)" },
-    decreasing: { line: { color: "#ef4444", width: 1 }, fillcolor: "rgba(239,68,68,0.55)" },
-    whiskerwidth: 0.15, showlegend: true,
+  // Both lines start from the same entry point so divergence is obvious
+  const actLine = {
+    type: "scatter", mode: "lines+markers", name: "✓ What actually happened",
+    x: [h.x.at(-1), ...a.x], y: [entry, ...a.close],
+    line: { color: "#38bdf8", width: 3 },
+    marker: { size: 5, color: "#38bdf8" },
   };
   const predLine = {
-    type: "scatter", mode: "lines", name: "Kronos prediction",
-    x: p.x, y: p.open.map((o, i) => (o + p.close[i]) / 2),
-    line: { color: "#f59e0b", width: 2.5 },
+    type: "scatter", mode: "lines+markers", name: "★ What Kronos predicted",
+    x: [h.x.at(-1), ...p.x], y: [entry, ...p.close],
+    line: { color: "#f59e0b", width: 3, dash: "solid" },
+    marker: { size: 5, symbol: "diamond", color: "#f59e0b" },
   };
   const bandX = [...p.x, ...p.x.slice().reverse()];
   const bandY = [...p.high, ...p.low.slice().reverse()];
   const predBand = {
     type: "scatter", fill: "toself", mode: "none",
-    x: bandX, y: bandY, fillcolor: "rgba(245,158,11,0.12)",
-    line: { width: 0 }, showlegend: false, name: "Prediction range",
-  };
-  const allVals = [...h.high, ...a.high, ...p.high, ...h.low, ...a.low, ...p.low];
-  const yMin = Math.min(...allVals) * 0.997, yMax = Math.max(...allVals) * 1.003;
-  const sepLine = {
-    type: "scatter", mode: "lines", x: [a.x[0], a.x[0]], y: [yMin, yMax],
-    line: { color: "rgba(59,130,246,0.5)", width: 1.5, dash: "dash" },
-    showlegend: false, name: "",
+    x: bandX, y: bandY, fillcolor: "rgba(245,158,11,0.10)",
+    line: { width: 0 }, showlegend: false, name: "Prediction range", hoverinfo: "skip",
   };
 
-  Plotly.react("chart", [predBand, ctxTrace, actTrace, predLine, sepLine], {
+  // Default zoom: the test window plus ~2.5x of lead-in context
+  const lead = Math.min(h.x.length - 1, Math.max(10, Math.ceil(a.x.length * 2.5)));
+  const x0 = h.x[h.x.length - 1 - lead];
+  const x1 = a.x.at(-1);
+  const visVals = [...h.high.slice(-lead), ...a.high, ...p.high,
+                   ...h.low.slice(-lead),  ...a.low,  ...p.low];
+  const yMin = Math.min(...visVals) * 0.995, yMax = Math.max(...visVals) * 1.005;
+
+  Plotly.react("chart", [predBand, ctxTrace, actLine, predLine], {
     paper_bgcolor: "transparent", plot_bgcolor: "transparent",
     font: { color: "#d4dde8", family: "Inter, -apple-system, sans-serif", size: 12 },
     xaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
              rangeslider: { visible: false }, color: "#5a7290",
-             tickfont: { size: 11 }, type: "date" },
+             tickfont: { size: 11 }, type: "date", range: [x0, x1] },
     yaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
-             color: "#5a7290", tickfont: { size: 11 }, side: "right", automargin: true },
-    margin: { t: 16, r: 70, b: 40, l: 10 },
-    legend: { orientation: "h", x: 0, y: 1.07, font: { size: 11 }, bgcolor: "transparent" },
+             color: "#5a7290", tickfont: { size: 11 }, side: "right",
+             automargin: true, range: [yMin, yMax] },
+    shapes: [{
+      type: "rect", xref: "x", yref: "paper",
+      x0: a.x[0], x1: a.x.at(-1), y0: 0, y1: 1,
+      fillcolor: "rgba(56,189,248,0.05)", line: { width: 0 }, layer: "below",
+    }, {
+      type: "line", xref: "x", yref: "paper",
+      x0: a.x[0], x1: a.x[0], y0: 0, y1: 1,
+      line: { color: "rgba(56,189,248,0.5)", width: 1.5, dash: "dash" },
+    }],
+    annotations: [{
+      x: a.x[Math.floor(a.x.length / 2)], y: 1, xref: "x", yref: "paper",
+      yanchor: "bottom", showarrow: false,
+      text: "TEST WINDOW — model was blind here",
+      font: { size: 10, color: "#38bdf8" }, opacity: 0.85,
+    }],
+    margin: { t: 30, r: 70, b: 40, l: 10 },
+    legend: { orientation: "h", x: 0, y: 1.12, font: { size: 12 }, bgcolor: "transparent" },
     hovermode: "x unified",
     hoverlabel: { bgcolor: "#111720", bordercolor: "#1e2a38", font: { color: "#d4dde8", size: 12 } },
   }, { responsive: true, scrollZoom: true, displayModeBar: true, displaylogo: false,
@@ -1220,6 +1304,65 @@ function renderNews(items) {
   }).join("");
 }
 
+// ── P&L simulator: "what if I'd put money on this call?" ─────────────────────
+let _pnl = null;
+
+function setupPnl(ctx) {
+  _pnl = ctx;
+  renderPnl();
+}
+
+function renderPnl() {
+  if (!_pnl) return;
+  const card = document.getElementById("pnlCard");
+  card.style.display = "block";
+
+  const stake = Math.max(1, parseFloat(document.getElementById("pnlStake").value) || 1000);
+  const lev   = Math.max(1, parseFloat(document.getElementById("pnlLev").value) || 1);
+  const dir   = _pnl.direction;             // follow Kronos's call: up = long, down = short
+  const moveInYourFavor = _pnl.changePct * dir;
+  const pnl   = stake * lev * moveInYourFavor / 100;
+  const roi   = lev * moveInYourFavor;
+
+  const posEl = document.getElementById("pnlPos");
+  posEl.textContent = dir === 1 ? "▲ LONG (Kronos says up)" : "▼ SHORT (Kronos says down)";
+  posEl.className = `pnl-pos ${dir === 1 ? "long" : "short"}`;
+
+  document.getElementById("pnlMode").textContent =
+    _pnl.mode === "backtest" ? "— had you followed this call" : "— projected, if the forecast plays out";
+
+  const cls = pnl >= 0 ? "green" : "red";
+  const sign = pnl >= 0 ? "+" : "";
+  document.getElementById("pnlResult").innerHTML = `
+    <div><div class="pnl-sub">P&amp;L on $${fmtN(stake, 0)} at ${lev}×</div>
+         <div class="pnl-big ${cls}">${sign}$${fmtN(pnl, 2)}</div></div>
+    <div><div class="pnl-sub">Return on stake</div>
+         <div class="pnl-mid ${cls}">${sign}${roi.toFixed(2)}%</div></div>
+    <div><div class="pnl-sub">Entry → ${_pnl.mode === "backtest" ? "exit" : "target"}</div>
+         <div class="pnl-mid">${fmtN(_pnl.entry, _pnl.entry > 100 ? 2 : 4)} → ${fmtN(_pnl.exit, _pnl.exit > 100 ? 2 : 4)}</div></div>`;
+
+  // Liquidation check: worst price against you during the window
+  const warnEl = document.getElementById("pnlWarn");
+  const adversePct = dir === 1
+    ? (_pnl.minLow - _pnl.entry) / _pnl.entry * 100
+    : (_pnl.entry - _pnl.maxHigh) / _pnl.entry * 100;
+  const liqAt = -100 / lev;
+  if (lev > 1 && adversePct <= liqAt) {
+    warnEl.style.display = "block";
+    warnEl.innerHTML = `⚠️ <strong>You would have been LIQUIDATED.</strong> At ${lev}× leverage your position dies at a ${Math.abs(liqAt).toFixed(1)}% adverse move — price went ${Math.abs(adversePct).toFixed(1)}% against you ${_pnl.mode === "backtest" ? "during the test window" : "inside the forecast range"}. Your $${fmtN(stake, 0)} would be gone regardless of where price ended up.`;
+  } else if (lev > 1 && adversePct <= liqAt * 0.6) {
+    warnEl.style.display = "block";
+    warnEl.innerHTML = `⚠️ <strong>Close call:</strong> price moved ${Math.abs(adversePct).toFixed(1)}% against this position ${_pnl.mode === "backtest" ? "during the test window" : "within the forecast band"} — liquidation at ${lev}× hits at ${Math.abs(liqAt).toFixed(1)}%. That's ${(Math.abs(adversePct) / Math.abs(liqAt) * 100).toFixed(0)}% of the way to losing the whole stake.`;
+  } else {
+    warnEl.style.display = "none";
+  }
+
+  document.getElementById("pnlNote").textContent =
+    _pnl.mode === "backtest"
+      ? `Simulation on ${_pnl.label}: enter at the last price the model saw, follow Kronos's direction, exit at the end of the test window. Ignores fees, funding and slippage — real results would be slightly worse.`
+      : `Projection on ${_pnl.label}: assumes the forecast is exactly right, which it won't be. Use the Backtest button to see how calls like this have actually landed. Ignores fees, funding and slippage.`;
+}
+
 // ── Forecast log: every call Kronos makes for you, graded against live price ──
 function getLog() {
   try { return JSON.parse(localStorage.getItem("kronosLog")) || []; } catch { return []; }
@@ -1334,6 +1477,7 @@ function showLoading(messages) {
   document.getElementById("statsRow").style.display = "none";
   document.getElementById("summaryGrid").style.display = "none";
   document.getElementById("ensoBanner").style.display = "none";
+  document.getElementById("pnlCard").style.display = "none";
 }
 
 function showError(msg) {
@@ -1349,16 +1493,30 @@ function showError(msg) {
 }
 
 // ── Horizon picker: traders think in time, not bars ───────────────────────────
+const CRYPTO_SET = new Set((INSTRUMENTS["Crypto"] || []).map(i => i.ticker));
 const HORIZONS = {
   "1d": [ { label: "1 Week", bars: 5 },  { label: "2 Weeks", bars: 10 }, { label: "1 Month", bars: 22 },  { label: "3 Months", bars: 66 } ],
   "4h": [ { label: "3 Days", bars: 18 }, { label: "1 Week", bars: 42 },  { label: "2 Weeks", bars: 84 },  { label: "1 Month", bars: 180 } ],
   "1h": [ { label: "1 Day", bars: 24 },  { label: "3 Days", bars: 72 },  { label: "1 Week", bars: 168 },  { label: "2 Weeks", bars: 200 } ],
 };
+// Crypto trades 7 days a week — "1 week" really means 7 daily bars there
+const HORIZONS_CRYPTO_1D =
+  [ { label: "1 Week", bars: 7 }, { label: "2 Weeks", bars: 14 }, { label: "1 Month", bars: 30 }, { label: "3 Months", bars: 90 } ];
 
-function buildHorizons() {
+function horizonSet() {
   const interval = document.getElementById("interval").value;
-  const cur = parseInt(document.getElementById("predBars").value);
-  document.getElementById("horizonSeg").innerHTML = (HORIZONS[interval] || HORIZONS["1d"]).map(h =>
+  if (interval === "1d" && CRYPTO_SET.has(selectedTicker)) return HORIZONS_CRYPTO_1D;
+  return HORIZONS[interval] || HORIZONS["1d"];
+}
+
+function buildHorizons(snap = false) {
+  const set = horizonSet();
+  let cur = parseInt(document.getElementById("predBars").value);
+  if (snap && !set.some(h => h.bars === cur)) {
+    cur = set.reduce((a, b) => Math.abs(b.bars - cur) < Math.abs(a.bars - cur) ? b : a).bars;
+    document.getElementById("predBars").value = cur;
+  }
+  document.getElementById("horizonSeg").innerHTML = set.map(h =>
     `<button class="seg-btn${h.bars === cur ? " active" : ""}" onclick="setHorizon(${h.bars}, this)">${h.label}</button>`
   ).join("");
 }
@@ -1404,7 +1562,9 @@ document.getElementById("interval").addEventListener("change", () => {
   buildHorizons();
   if (selectedTicker) loadHistory(selectedTicker);
 });
-document.getElementById("predBars").addEventListener("change", buildHorizons);
+document.getElementById("predBars").addEventListener("change", () => buildHorizons());
+document.getElementById("pnlStake").addEventListener("input", renderPnl);
+document.getElementById("pnlLev").addEventListener("change", renderPnl);
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && document.activeElement !== document.getElementById("searchInput")
       && !document.getElementById("runBtn").disabled) {
