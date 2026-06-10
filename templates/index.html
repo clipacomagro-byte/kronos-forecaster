@@ -105,6 +105,10 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 .run-btn:hover    { opacity: 0.88; transform: translateY(-1px); }
 .run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .run-btn.loading  { opacity: 0.7; }
+.run-btn.secondary {
+  background: transparent; border: 1px solid var(--accent); color: var(--accent);
+}
+.run-btn.secondary:hover { background: rgba(59,130,246,.1); }
 
 /* ── Main content ── */
 .content { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
@@ -378,6 +382,10 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
     <input id="sampleCount" type="number" value="5" min="1" max="20">
   </div>
   <button class="run-btn" id="runBtn" onclick="runForecast()" disabled>Run Forecast</button>
+  <button class="run-btn secondary" id="backtestBtn" onclick="runBacktest()" disabled
+          title="Hold out the most recent bars, forecast them blind, and compare prediction vs what actually happened">
+    🎯 Backtest Accuracy
+  </button>
 </div>
 
 <!-- ── Main content ──────────────────────────────────────────────────── -->
@@ -530,12 +538,32 @@ function selectInstrument(ticker, label) {
   selectedTicker = ticker;
   selectedLabel  = label;
   document.getElementById("runBtn").disabled = false;
+  document.getElementById("backtestBtn").disabled = false;
   document.getElementById("topName").textContent = label;
   document.getElementById("topName").style.display = "block";
   document.getElementById("chartTitle").textContent = `${label} · Forecast Chart`;
   buildGrid();
   loadPrice(ticker);
   loadNews(ticker);   // fetch headlines immediately on instrument select
+  saveState();
+}
+
+// ── Persist selection + settings across refreshes ─────────────────────────────
+const SETTING_IDS = ["interval", "contextBars", "predBars", "modelKey", "temperature", "sampleCount"];
+
+function saveState() {
+  const s = { ticker: selectedTicker, label: selectedLabel, cat: activeCat };
+  SETTING_IDS.forEach(id => s[id] = document.getElementById(id).value);
+  try { localStorage.setItem("kronosState", JSON.stringify(s)); } catch {}
+}
+
+function restoreState() {
+  let s;
+  try { s = JSON.parse(localStorage.getItem("kronosState")); } catch {}
+  if (!s) return;
+  SETTING_IDS.forEach(id => { if (s[id] !== undefined) document.getElementById(id).value = s[id]; });
+  if (s.cat && INSTRUMENTS[s.cat]) { activeCat = s.cat; buildTabs(); buildGrid(); }
+  if (s.ticker && s.label) selectInstrument(s.ticker, s.label);
 }
 
 // ── Live price ─────────────────────────────────────────────────────────────────
@@ -591,6 +619,7 @@ function hideSearch() { setTimeout(() => document.getElementById("searchResults"
 // ── Forecast ──────────────────────────────────────────────────────────────────
 async function runForecast() {
   if (!selectedTicker) return;
+  saveState();
   const btn = document.getElementById("runBtn");
   btn.disabled = true; btn.textContent = "Running…"; btn.classList.add("loading");
   showLoading();
@@ -623,15 +652,150 @@ async function runForecast() {
   }
 }
 
-// ── Chart ─────────────────────────────────────────────────────────────────────
-function renderChart(data) {
+// ── Backtest ──────────────────────────────────────────────────────────────────
+async function runBacktest() {
+  if (!selectedTicker) return;
+  saveState();
+  const btn = document.getElementById("backtestBtn");
+  btn.disabled = true; btn.textContent = "Backtesting…"; btn.classList.add("loading");
+  showLoading([
+    "Hiding the most recent bars from the model…",
+    "Forecasting the held-out period blind…",
+    "Comparing prediction vs what really happened…",
+  ]);
+  try {
+    const r = await fetch("/api/backtest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker:       selectedTicker,
+        interval:     document.getElementById("interval").value,
+        context_bars: parseInt(document.getElementById("contextBars").value),
+        pred_bars:    parseInt(document.getElementById("predBars").value),
+        model:        document.getElementById("modelKey").value,
+        temperature:  parseFloat(document.getElementById("temperature").value),
+        sample_count: parseInt(document.getElementById("sampleCount").value),
+        top_p: 0.9,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) { showError(d.error || "Unknown error"); return; }
+    renderBacktestChart(d);
+    renderBacktestStats(d);
+  } catch (e) {
+    showError("Request failed: " + e.message);
+  } finally {
+    btn.disabled = false; btn.innerHTML = "🎯 Backtest Accuracy"; btn.classList.remove("loading");
+  }
+}
+
+function renderBacktestChart(d) {
   document.getElementById("placeholder").style.display = "none";
+  stopLoadingMsgs();
   const chartEl = document.getElementById("chart");
   chartEl.style.display = "block";
   document.getElementById("chartLegend").style.display = "flex";
+  document.getElementById("chartTitle").textContent =
+    `${d.label} · Backtest — gold = what Kronos predicted, candles = what actually happened`;
+
+  const h = d.historical, a = d.actual, p = d.predicted;
+
+  const ctxTrace = {
+    type: "candlestick", name: "History (model saw this)",
+    x: h.x, open: h.open, high: h.high, low: h.low, close: h.close,
+    increasing: { line: { color: "#22c55e", width: 1 }, fillcolor: "rgba(34,197,94,0.55)" },
+    decreasing: { line: { color: "#ef4444", width: 1 }, fillcolor: "rgba(239,68,68,0.55)" },
+    whiskerwidth: 0.15,
+  };
+  const actTrace = {
+    type: "candlestick", name: "Actual (model never saw this)",
+    x: a.x, open: a.open, high: a.high, low: a.low, close: a.close,
+    increasing: { line: { color: "#22c55e", width: 1 }, fillcolor: "rgba(34,197,94,0.55)" },
+    decreasing: { line: { color: "#ef4444", width: 1 }, fillcolor: "rgba(239,68,68,0.55)" },
+    whiskerwidth: 0.15, showlegend: true,
+  };
+  const predLine = {
+    type: "scatter", mode: "lines", name: "Kronos prediction",
+    x: p.x, y: p.open.map((o, i) => (o + p.close[i]) / 2),
+    line: { color: "#f59e0b", width: 2.5 },
+  };
+  const bandX = [...p.x, ...p.x.slice().reverse()];
+  const bandY = [...p.high, ...p.low.slice().reverse()];
+  const predBand = {
+    type: "scatter", fill: "toself", mode: "none",
+    x: bandX, y: bandY, fillcolor: "rgba(245,158,11,0.12)",
+    line: { width: 0 }, showlegend: false, name: "Prediction range",
+  };
+  const allVals = [...h.high, ...a.high, ...p.high, ...h.low, ...a.low, ...p.low];
+  const yMin = Math.min(...allVals) * 0.997, yMax = Math.max(...allVals) * 1.003;
+  const sepLine = {
+    type: "scatter", mode: "lines", x: [a.x[0], a.x[0]], y: [yMin, yMax],
+    line: { color: "rgba(59,130,246,0.5)", width: 1.5, dash: "dash" },
+    showlegend: false, name: "",
+  };
+
+  Plotly.react("chart", [predBand, ctxTrace, actTrace, predLine, sepLine], {
+    paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+    font: { color: "#d4dde8", family: "-apple-system, sans-serif", size: 12 },
+    xaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
+             rangeslider: { visible: false }, color: "#5a7290",
+             tickfont: { size: 11 }, type: "date" },
+    yaxis: { gridcolor: "#1a2536", showgrid: true, zeroline: false,
+             color: "#5a7290", tickfont: { size: 11 }, side: "right", automargin: true },
+    margin: { t: 16, r: 70, b: 40, l: 10 },
+    legend: { orientation: "h", x: 0, y: 1.07, font: { size: 11 }, bgcolor: "transparent" },
+    hovermode: "x unified",
+    hoverlabel: { bgcolor: "#111720", bordercolor: "#1e2a38", font: { color: "#d4dde8", size: 12 } },
+  }, { responsive: true, scrollZoom: true, displayModeBar: true, displaylogo: false,
+       modeBarButtonsToRemove: ["toImage","sendDataToCloud","select2d","lasso2d","autoScale2d","hoverClosestCartesian","hoverCompareCartesian","toggleSpikelines"] });
+}
+
+function renderBacktestStats(d) {
+  const m = d.metrics;
+  const dirOk = m.direction_correct;
+  const sign = v => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+  const stats = [
+    { label: "Direction Call", val: dirOk ? "✓ Correct" : "✗ Wrong",
+      sub: "did it call up vs down right?", cls: dirOk ? "green" : "red" },
+    { label: "Kronos Predicted", val: sign(m.predicted_pct), sub: `over ${m.bars} bars`,
+      cls: m.predicted_pct >= 0 ? "green" : "red" },
+    { label: "Actually Happened", val: sign(m.actual_pct), sub: "real market move",
+      cls: m.actual_pct >= 0 ? "green" : "red" },
+    { label: "Bar-by-Bar Hit Rate", val: `${m.hit_rate.toFixed(0)}%`,
+      sub: "bars called above/below start", cls: m.hit_rate >= 60 ? "green" : m.hit_rate < 45 ? "red" : "" },
+    { label: "Avg Price Error", val: `${m.mape.toFixed(2)}%`,
+      sub: "MAPE — lower is better", cls: m.mape < 3 ? "green" : m.mape > 8 ? "red" : "" },
+    { label: "Model", val: `Kronos-${d.model}`, sub: "same settings as forecast", cls: "" },
+  ];
+  const row = document.getElementById("statsRow");
+  row.style.display = "grid";
+  row.innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-val ${s.cls}">${s.val}</div>
+      <div class="stat-sub">${s.sub}</div>
+    </div>`).join("");
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+function renderChart(data) {
+  document.getElementById("placeholder").style.display = "none";
+  stopLoadingMsgs();
+  const chartEl = document.getElementById("chart");
+  chartEl.style.display = "block";
+  document.getElementById("chartLegend").style.display = "flex";
+  document.getElementById("chartTitle").textContent = `${data.label} · Forecast Chart`;
 
   const h = data.historical;
   const f = data.forecast;
+
+  // Volume subplot (skipped when the feed reports no volume, e.g. forex)
+  const hasVolume = Array.isArray(h.volume) && h.volume.some(v => v > 0);
+  const volTrace = hasVolume ? {
+    type: "bar", name: "Volume", x: h.x, y: h.volume, yaxis: "y2",
+    marker: { color: h.close.map((c, i) => c >= h.open[i] ? "rgba(34,197,94,0.35)" : "rgba(239,68,68,0.35)") },
+    showlegend: false, hoverinfo: "skip",
+  } : null;
 
   // Historical candlesticks
   const histTrace = {
@@ -684,8 +848,11 @@ function renderChart(data) {
     showlegend: false, name: "",
   };
 
+  const traces = [forecastBand, histTrace, highLine, lowLine, forecastLine, sepLine];
+  if (volTrace) traces.push(volTrace);
+
   Plotly.react("chart",
-    [forecastBand, histTrace, highLine, lowLine, forecastLine, sepLine],
+    traces,
     {
       paper_bgcolor: "transparent",
       plot_bgcolor:  "transparent",
@@ -699,7 +866,13 @@ function renderChart(data) {
         gridcolor: "#1a2536", showgrid: true, zeroline: false,
         color: "#5a7290", tickfont: { size: 11 }, side: "right",
         automargin: true,
+        domain: volTrace ? [0.26, 1] : [0, 1],
       },
+      yaxis2: volTrace ? {
+        domain: [0, 0.18], gridcolor: "#1a2536", showgrid: false,
+        zeroline: false, color: "#5a7290", tickfont: { size: 10 },
+        side: "right", automargin: true,
+      } : undefined,
       margin: { t: 16, r: 70, b: 40, l: 10 },
       legend: { orientation: "h", x: 0, y: 1.05, font: { size: 11 }, bgcolor: "transparent" },
       hovermode: "x unified",
@@ -834,17 +1007,18 @@ function renderNews(items) {
   list.innerHTML = items.map(item => {
     const s = item.sentiment || "neutral";
     const sentLabel = s === "bullish" ? "📈 Bullish signal" : s === "bearish" ? "📉 Bearish signal" : "➡️ Neutral";
+    const link = /^https?:\/\//i.test(item.link || "") ? item.link : "#";
     return `
-    <a class="news-item" href="${item.link || '#'}" target="_blank" rel="noopener">
+    <a class="news-item" href="${esc(link)}" target="_blank" rel="noopener">
       <div class="news-dot ${s}"></div>
       <div class="news-body">
-        <div class="news-headline">${item.title}</div>
+        <div class="news-headline">${esc(item.title)}</div>
         <div class="news-implication ${s}">
-          <strong>${sentLabel} —</strong> ${item.implication}
+          <strong>${sentLabel} —</strong> ${esc(item.implication)}
         </div>
         <div class="news-meta">
-          <span class="news-source">${item.source}</span>
-          <span>${item.time_ago}</span>
+          <span class="news-source">${esc(item.source)}</span>
+          <span>${esc(item.time_ago)}</span>
         </div>
       </div>
     </a>`;
@@ -856,10 +1030,34 @@ function fmtN(v, dec = 2) {
   return Number(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
-function showLoading() {
-  document.getElementById("placeholder").innerHTML = `
-    <div class="spinner"></div>
-    <div class="placeholder-text">Running Kronos AI forecast…<br><small style="color:var(--muted)">First run downloads model weights (~50–400 MB)</small></div>`;
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+let _loadingTimer = null;
+
+function stopLoadingMsgs() {
+  if (_loadingTimer) { clearInterval(_loadingTimer); _loadingTimer = null; }
+}
+
+function showLoading(messages) {
+  const msgs = messages || [
+    "Fetching latest market data…",
+    "Tokenising price history…",
+    "Running Kronos AI forecast…",
+    "Sampling probable price paths…",
+    "Still working — first run downloads model weights (~50–400 MB)…",
+  ];
+  let i = 0;
+  const render = () => {
+    document.getElementById("placeholder").innerHTML = `
+      <div class="spinner"></div>
+      <div class="placeholder-text">${msgs[Math.min(i, msgs.length - 1)]}</div>`;
+  };
+  render();
+  stopLoadingMsgs();
+  _loadingTimer = setInterval(() => { i++; render(); }, 6000);
   document.getElementById("placeholder").style.display = "flex";
   document.getElementById("chart").style.display = "none";
   document.getElementById("chartLegend").style.display = "none";
@@ -869,19 +1067,22 @@ function showLoading() {
 }
 
 function showError(msg) {
+  stopLoadingMsgs();
   const t = document.getElementById("toast");
   t.textContent = "⚠ " + msg;
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 6000);
   document.getElementById("placeholder").innerHTML = `
     <div class="placeholder-icon">⚠️</div>
-    <div class="placeholder-text" style="color:var(--red)">${msg}</div>`;
+    <div class="placeholder-text" style="color:var(--red)">${esc(msg)}</div>`;
   document.getElementById("placeholder").style.display = "flex";
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 buildTabs();
 buildGrid();
+restoreState();
+SETTING_IDS.forEach(id => document.getElementById(id).addEventListener("change", saveState));
 </script>
 </body>
 </html>

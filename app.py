@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+import threading
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -23,6 +24,7 @@ CORS(app)
 # ── Model state ────────────────────────────────────────────────────────────────
 _predictor = None
 _loaded_model_id = None
+_model_lock = threading.Lock()  # model load + inference are not thread-safe
 
 MODEL_CONFIGS = {
     "mini":  {"model_id": "NeoQuasar/Kronos-mini",  "tokenizer_id": "NeoQuasar/Kronos-Tokenizer-base", "context": 2048, "params": "4.1M"},
@@ -68,18 +70,29 @@ INSTRUMENTS = {
         {"label": "Ethereum", "ticker": "ETH-USD", "unit": "USD"},
         {"label": "Solana",   "ticker": "SOL-USD", "unit": "USD"},
         {"label": "BNB",      "ticker": "BNB-USD", "unit": "USD"},
+        {"label": "XRP",      "ticker": "XRP-USD", "unit": "USD"},
+        {"label": "Dogecoin", "ticker": "DOGE-USD","unit": "USD"},
     ],
     "Stocks & Indices": [
         {"label": "S&P 500",    "ticker": "^GSPC", "unit": ""},
         {"label": "NASDAQ",     "ticker": "^IXIC", "unit": ""},
         {"label": "Dow Jones",  "ticker": "^DJI",  "unit": ""},
+        {"label": "FTSE 100",   "ticker": "^FTSE", "unit": ""},
+        {"label": "DAX",        "ticker": "^GDAXI","unit": ""},
+        {"label": "Nikkei 225", "ticker": "^N225", "unit": ""},
         {"label": "Apple",      "ticker": "AAPL",  "unit": "USD"},
         {"label": "NVIDIA",     "ticker": "NVDA",  "unit": "USD"},
         {"label": "Tesla",      "ticker": "TSLA",  "unit": "USD"},
         {"label": "Microsoft",  "ticker": "MSFT",  "unit": "USD"},
+        {"label": "Amazon",     "ticker": "AMZN",  "unit": "USD"},
+        {"label": "Alphabet",   "ticker": "GOOGL", "unit": "USD"},
+        {"label": "Meta",       "ticker": "META",  "unit": "USD"},
         {"label": "Gold Miners","ticker": "GDX",   "unit": "USD"},
     ],
 }
+
+# Crypto trades 24/7; everything else gets business-day forecast timestamps
+CRYPTO_TICKERS = {i["ticker"] for i in INSTRUMENTS["Crypto"]}
 
 # ── ENSO / El Niño data ────────────────────────────────────────────────────────
 _enso_cache = {"data": None, "fetched": None}
@@ -87,7 +100,7 @@ _enso_cache = {"data": None, "fetched": None}
 def get_enso_status():
     """Fetch latest ONI from NOAA and classify ENSO phase."""
     now = datetime.utcnow()
-    if _enso_cache["data"] and _enso_cache["fetched"] and (now - _enso_cache["fetched"]).seconds < 3600 * 6:
+    if _enso_cache["data"] and _enso_cache["fetched"] and (now - _enso_cache["fetched"]).total_seconds() < 3600 * 6:
         return _enso_cache["data"]
     try:
         url = "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
@@ -582,10 +595,13 @@ def fetch_ohlcv(ticker: str, interval: str, bars: int) -> pd.DataFrame:
     return df.tail(bars)
 
 
-def make_future_timestamps(last_ts, n: int, freq_td: timedelta):
+def make_future_timestamps(last_ts, n: int, freq_td: timedelta, business_days: bool = False):
     if hasattr(last_ts, 'tzinfo') and last_ts.tzinfo is not None:
         last_ts = last_ts.replace(tzinfo=None)
-    return pd.Series([pd.Timestamp(last_ts) + freq_td * (i + 1) for i in range(n)])
+    last = pd.Timestamp(last_ts)
+    if business_days:
+        return pd.Series(pd.bdate_range(start=last + pd.Timedelta(days=1), periods=n))
+    return pd.Series([last + freq_td * (i + 1) for i in range(n)])
 
 
 def infer_freq(ts_index: pd.DatetimeIndex) -> timedelta:
@@ -647,41 +663,80 @@ def api_price():
         return jsonify({"error": str(e)}), 500
 
 
+def parse_forecast_params(body: dict) -> dict:
+    """Read forecast params from a request body, clamped to safe server-side ranges."""
+    interval = body.get("interval", "1d")
+    if interval not in ("1d", "1h", "4h"):
+        interval = "1d"
+    return {
+        "ticker":       str(body.get("ticker", "GC=F")).upper()[:20],
+        "interval":     interval,
+        "context_bars": max(50, min(int(body.get("context_bars", 300)), 2000)),
+        "pred_bars":    max(1,  min(int(body.get("pred_bars", 30)),    200)),
+        "model_key":    body.get("model", "mini"),
+        "temperature":  max(0.1, min(float(body.get("temperature", 1.0)), 3.0)),
+        "top_p":        max(0.1, min(float(body.get("top_p", 0.9)),       1.0)),
+        "sample_count": max(1,  min(int(body.get("sample_count", 3)),   10)),
+    }
+
+
+def run_prediction(df, pred_bars, model_key, temperature, top_p, sample_count,
+                   y_ts=None, business_days=False):
+    """Shared prediction path for forecast + backtest. Serialised by _model_lock."""
+    x_ts = pd.Series(pd.to_datetime(df.index).tz_localize(None)
+                     if df.index.tz is not None else pd.to_datetime(df.index))
+    if y_ts is None:
+        freq = infer_freq(pd.DatetimeIndex(x_ts))
+        y_ts = make_future_timestamps(x_ts.iloc[-1], pred_bars, freq, business_days)
+    with _model_lock:
+        predictor = get_predictor(model_key)
+        return predictor.predict(df, x_ts, y_ts, pred_len=pred_bars,
+                                 T=temperature, top_p=top_p,
+                                 sample_count=sample_count, verbose=False)
+
+
+def candles(d: pd.DataFrame) -> dict:
+    ts = pd.DatetimeIndex(d.index)
+    if ts.tz is not None:
+        ts = ts.tz_localize(None)
+    return {
+        "x":      [str(t) for t in ts],
+        "open":   d["open"].tolist(),
+        "high":   d["high"].tolist(),
+        "low":    d["low"].tolist(),
+        "close":  d["close"].tolist(),
+        "volume": d["volume"].tolist() if "volume" in d.columns else [],
+    }
+
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/forecast", methods=["POST"])
 def api_forecast():
-    body = request.get_json(force=True)
-    ticker       = body.get("ticker", "GC=F").upper()
-    interval     = body.get("interval", "1d")
-    context_bars = int(body.get("context_bars", 300))
-    pred_bars    = int(body.get("pred_bars", 30))
-    model_key    = body.get("model", "mini")
-    temperature  = float(body.get("temperature", 1.0))
-    top_p        = float(body.get("top_p", 0.9))
-    sample_count = int(body.get("sample_count", 3))
+    p = parse_forecast_params(request.get_json(force=True))
+    ticker, interval = p["ticker"], p["interval"]
+    pred_bars, model_key = p["pred_bars"], p["model_key"]
 
     if model_key not in MODEL_CONFIGS:
         return jsonify({"error": f"Unknown model '{model_key}'"}), 400
 
     try:
-        df = fetch_ohlcv(ticker, interval, context_bars + 50)
+        df = fetch_ohlcv(ticker, interval, p["context_bars"] + 50)
     except Exception as e:
         return jsonify({"error": f"Data fetch failed: {e}"}), 500
 
     if len(df) < 30:
         return jsonify({"error": f"Not enough data for {ticker} ({len(df)} bars)"}), 400
 
-    df = df.tail(context_bars)
-
-    x_ts = pd.Series(pd.to_datetime(df.index).tz_localize(None)
-                     if df.index.tz is not None else pd.to_datetime(df.index))
-    freq  = infer_freq(pd.DatetimeIndex(x_ts))
-    y_ts  = make_future_timestamps(x_ts.iloc[-1], pred_bars, freq)
+    df = df.tail(p["context_bars"])
+    business = interval == "1d" and ticker not in CRYPTO_TICKERS
 
     try:
-        predictor = get_predictor(model_key)
-        pred_df = predictor.predict(df, x_ts, y_ts, pred_len=pred_bars,
-                                    T=temperature, top_p=top_p,
-                                    sample_count=sample_count, verbose=False)
+        pred_df = run_prediction(df, pred_bars, model_key, p["temperature"],
+                                 p["top_p"], p["sample_count"], business_days=business)
     except Exception as e:
         logger.error(f"Prediction error: {e}", exc_info=True)
         return jsonify({"error": f"Prediction failed: {e}"}), 500
@@ -705,18 +760,6 @@ def api_forecast():
     signals = get_macro_signals(ticker, enso, forecast_pct)
     summary = generate_summary(ticker, label, forecast_pct, pred_bars, interval, enso, signals)
 
-    def candles(d):
-        ts = pd.DatetimeIndex(d.index)
-        if ts.tz is not None:
-            ts = ts.tz_localize(None)
-        return {
-            "x":     [str(t) for t in ts],
-            "open":  d["open"].tolist(),
-            "high":  d["high"].tolist(),
-            "low":   d["low"].tolist(),
-            "close": d["close"].tolist(),
-        }
-
     news = get_news(ticker)
 
     return jsonify({
@@ -731,6 +774,80 @@ def api_forecast():
         "signals":     signals,
         "summary":     summary,
         "news":        news,
+    })
+
+
+@app.route("/api/backtest", methods=["POST"])
+def api_backtest():
+    """
+    Hold out the most recent `pred_bars` bars, forecast them blind from earlier
+    data, and compare prediction vs reality. The honest accuracy check.
+    """
+    p = parse_forecast_params(request.get_json(force=True))
+    ticker, interval = p["ticker"], p["interval"]
+    pred_bars, model_key = p["pred_bars"], p["model_key"]
+
+    if model_key not in MODEL_CONFIGS:
+        return jsonify({"error": f"Unknown model '{model_key}'"}), 400
+
+    try:
+        df_full = fetch_ohlcv(ticker, interval, p["context_bars"] + pred_bars + 50)
+    except Exception as e:
+        return jsonify({"error": f"Data fetch failed: {e}"}), 500
+
+    if len(df_full) < pred_bars + 60:
+        return jsonify({"error": f"Not enough history for {ticker} to backtest "
+                                 f"({len(df_full)} bars, need {pred_bars + 60})"}), 400
+
+    holdout = df_full.tail(pred_bars)
+    context = df_full.iloc[:-pred_bars].tail(p["context_bars"])
+
+    # Predict onto the real holdout timestamps so bars line up exactly
+    h_ts = pd.DatetimeIndex(holdout.index)
+    if h_ts.tz is not None:
+        h_ts = h_ts.tz_localize(None)
+    y_ts = pd.Series(h_ts)
+
+    try:
+        pred_df = run_prediction(context, pred_bars, model_key, p["temperature"],
+                                 p["top_p"], p["sample_count"], y_ts=y_ts)
+    except Exception as e:
+        logger.error(f"Backtest prediction error: {e}", exc_info=True)
+        return jsonify({"error": f"Prediction failed: {e}"}), 500
+
+    last_ctx = float(context["close"].iloc[-1])
+    clip_hi, clip_lo = last_ctx * 1.40, last_ctx * 0.60
+    for col in ("open", "high", "low", "close"):
+        pred_df[col] = pred_df[col].clip(lower=clip_lo, upper=clip_hi)
+
+    actual_close = holdout["close"].to_numpy(dtype=float)
+    pred_close   = pred_df["close"].to_numpy(dtype=float)[:len(actual_close)]
+
+    actual_pct = (actual_close[-1] - last_ctx) / last_ctx * 100
+    pred_pct   = (pred_close[-1]   - last_ctx) / last_ctx * 100
+    direction_correct = (actual_pct >= 0) == (pred_pct >= 0)
+
+    # Per-bar: did the model call each bar above/below the starting price correctly?
+    hits = sum((a >= last_ctx) == (q >= last_ctx) for a, q in zip(actual_close, pred_close))
+    hit_rate = hits / len(actual_close) * 100
+    mape = float(np.mean(np.abs(pred_close - actual_close) / actual_close) * 100)
+
+    return jsonify({
+        "ticker":    ticker,
+        "label":     ticker_to_label(ticker),
+        "interval":  interval,
+        "model":     model_key,
+        "historical": candles(context.tail(120)),
+        "actual":     candles(holdout),
+        "predicted":  candles(pred_df),
+        "metrics": {
+            "actual_pct":        actual_pct,
+            "predicted_pct":     pred_pct,
+            "direction_correct": bool(direction_correct),
+            "hit_rate":          hit_rate,
+            "mape":              mape,
+            "bars":              len(actual_close),
+        },
     })
 
 
